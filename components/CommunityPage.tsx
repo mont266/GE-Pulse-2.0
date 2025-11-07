@@ -234,9 +234,33 @@ const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreat
     );
 };
 
+const buildCommentTree = (comments: Comment[]): Comment[] => {
+    const commentMap: { [id: string]: Comment } = {};
+    const rootComments: Comment[] = [];
+
+    // First pass: create a map of all comments by their ID and initialize replies array
+    for (const comment of comments) {
+        comment.replies = [];
+        commentMap[comment.id] = comment;
+    }
+
+    // Second pass: link replies to their parents
+    for (const comment of comments) {
+        if (comment.parent_comment_id && commentMap[comment.parent_comment_id]) {
+            commentMap[comment.parent_comment_id].replies!.push(comment);
+        } else {
+            rootComments.push(comment);
+        }
+    }
+
+    return rootComments;
+};
+
+
 const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onPostDeleted: (postId: string) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile, onPostDeleted }) => {
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
-    const [comments, setComments] = useState<Comment[]>([]);
+    const [commentTree, setCommentTree] = useState<Comment[]>([]);
+    const [allComments, setAllComments] = useState<Comment[]>([]); // Flat list for easier updates
     const [isCommentsLoading, setIsCommentsLoading] = useState(false);
     const [commentCount, setCommentCount] = useState(post.comment_count);
     const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
@@ -248,11 +272,12 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
     const handleToggleComments = async () => {
         const currentlyOpen = isCommentsOpen;
         setIsCommentsOpen(!currentlyOpen);
-        if (!currentlyOpen && comments.length === 0 && commentCount > 0) {
+        if (!currentlyOpen && allComments.length === 0 && commentCount > 0) {
             setIsCommentsLoading(true);
             try {
                 const fetchedComments = await fetchCommentsForPost(post.id);
-                setComments(fetchedComments);
+                setAllComments(fetchedComments);
+                setCommentTree(buildCommentTree(fetchedComments));
             } catch (error) {
                 console.error("Failed to fetch comments", error);
             } finally {
@@ -262,9 +287,11 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
     };
     
     const handleCommentAdded = (newComment: Comment) => {
-        setComments(prev => [...prev, newComment]);
+        const updatedComments = [...allComments, newComment];
+        setAllComments(updatedComments);
+        setCommentTree(buildCommentTree(updatedComments));
         setCommentCount(prev => prev + 1);
-    }
+    };
     
     const handleConfirmDelete = async () => {
         setIsDeleting(true);
@@ -329,14 +356,29 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
                     </button>
                 </div>
                 {isCommentsOpen && (
-                     <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4">
-                        {isCommentsLoading ? <div className="flex justify-center p-4"><Loader /></div> :
-                         comments.length > 0 ? (
-                            <div className="space-y-4">
-                                {comments.map(c => <CommentCard key={c.id} comment={c} onViewProfile={onViewProfile} />)}
-                            </div>
-                        ) : <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>}
-                         {session && profile && <CreateCommentForm postId={post.id} session={session} onCommentAdded={handleCommentAdded} />}
+                     <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4 space-y-4">
+                        {isCommentsLoading ? (
+                            <div className="flex justify-center p-4"><Loader /></div>
+                        ) : commentTree.length > 0 ? (
+                            commentTree.map(c => (
+                                <CommentCard 
+                                    key={c.id} 
+                                    comment={c} 
+                                    session={session}
+                                    onViewProfile={onViewProfile}
+                                    onCommentAdded={handleCommentAdded}
+                                />
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>
+                        )}
+                         {session && (
+                            <CreateCommentForm 
+                                postId={post.id} 
+                                session={session} 
+                                onCommentAdded={handleCommentAdded} 
+                            />
+                         )}
                     </div>
                 )}
             </Card>
@@ -362,30 +404,83 @@ const FlipPost: React.FC<{ flip: FlipData; item: Item; onSelectItem: (item: Item
     )
 };
 
-const CommentCard: React.FC<{ comment: Comment; onViewProfile: (user: {username: string | null}) => void; }> = ({ comment, onViewProfile }) => (
-     <div className="flex items-start gap-3">
-        <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
-        <div className="flex-1 bg-gray-700/40 rounded-lg px-3 py-2">
-            <div className="flex items-center gap-2">
-                <button onClick={() => onViewProfile({ username: comment.profiles.username })} className="font-bold text-white text-sm hover:underline">{comment.profiles.username || 'Anonymous'}</button>
-                 {comment.profiles.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
-                <span className="text-gray-500 text-xs">· {timeAgo(comment.created_at)}</span>
+const CommentCard: React.FC<{ comment: Comment; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onCommentAdded: (comment: Comment) => void; depth?: number; }> = ({ comment, session, onViewProfile, onCommentAdded, depth = 0 }) => {
+    const [isReplying, setIsReplying] = useState(false);
+    
+    return (
+        <div className="flex items-start gap-3">
+            <div className="flex-shrink-0">
+                <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full mt-1"/>
+                {comment.replies && comment.replies.length > 0 && (
+                    <div className="w-0.5 bg-gray-600/50 mx-auto h-full mt-1"></div>
+                )}
             </div>
-            <p className="text-gray-300 text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+            <div className="flex-1">
+                <div className="bg-gray-700/40 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => onViewProfile({ username: comment.profiles.username })} className="font-bold text-white text-sm hover:underline">{comment.profiles.username || 'Anonymous'}</button>
+                        {comment.profiles.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
+                        <span className="text-gray-500 text-xs">· {timeAgo(comment.created_at)}</span>
+                    </div>
+                    <p className="text-gray-300 text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+                </div>
+                {session && (
+                    <div className="mt-1">
+                        <button onClick={() => setIsReplying(!isReplying)} className="text-xs font-bold text-gray-400 hover:text-white px-2 py-1 rounded">
+                            Reply
+                        </button>
+                    </div>
+                )}
+                {isReplying && session && (
+                    <div className="mt-2">
+                        <CreateCommentForm
+                            postId={comment.post_id}
+                            session={session}
+                            onCommentAdded={(newComment) => {
+                                onCommentAdded(newComment);
+                                setIsReplying(false);
+                            }}
+                            parentCommentId={comment.id}
+                            onCancel={() => setIsReplying(false)}
+                        />
+                    </div>
+                )}
+                {comment.replies && comment.replies.length > 0 && (
+                    <div className="mt-4 space-y-4">
+                        {comment.replies.map(reply => (
+                            <CommentCard 
+                                key={reply.id} 
+                                comment={reply} 
+                                session={session}
+                                onViewProfile={onViewProfile} 
+                                onCommentAdded={onCommentAdded}
+                                depth={depth + 1} 
+                            />
+                        ))}
+                    </div>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
-const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentAdded: (comment: Comment) => void; }> = ({ postId, session, onCommentAdded }) => {
+const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentAdded: (comment: Comment) => void; parentCommentId?: string; onCancel?: () => void; }> = ({ postId, session, onCommentAdded, parentCommentId, onCancel }) => {
     const [content, setContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+        if(parentCommentId){ // only autofocus for replies
+            textareaRef.current?.focus();
+        }
+    }, [parentCommentId]);
     
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!content.trim()) return;
         setIsSubmitting(true);
         try {
-            const newComment = await createComment(session.user.id, postId, content.trim());
+            const newComment = await createComment(session.user.id, postId, content.trim(), parentCommentId);
             onCommentAdded(newComment);
             setContent('');
         } catch (error) {
@@ -397,13 +492,22 @@ const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentA
 
     return (
         <form onSubmit={handleSubmit} className="flex items-start gap-3 mt-4">
-            <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+            {!parentCommentId && (
+                 <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+            )}
             <div className="flex-1">
-                 <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Write a comment..." rows={1}
-                    className="w-full bg-gray-700/40 border border-gray-600 rounded-lg p-2 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none resize-none" />
-                <div className="flex justify-end mt-2">
+                 <textarea 
+                    ref={textareaRef}
+                    value={content} 
+                    onChange={e => setContent(e.target.value)} 
+                    placeholder="Write a comment..." 
+                    rows={1}
+                    className="w-full bg-gray-700/40 border border-gray-600 rounded-lg p-2 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none resize-none" 
+                 />
+                <div className="flex justify-end mt-2 gap-2">
+                     {onCancel && <Button size="sm" type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}
                      <Button size="sm" type="submit" disabled={isSubmitting || !content.trim()}>
-                        {isSubmitting ? <Loader size="sm" /> : 'Comment'}
+                        {isSubmitting ? <Loader size="sm" /> : parentCommentId ? 'Reply' : 'Comment'}
                     </Button>
                 </div>
             </div>

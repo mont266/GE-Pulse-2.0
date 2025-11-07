@@ -587,12 +587,13 @@ export const fetchPosts = async (): Promise<Post[]> => {
  * @param userId The ID of the user commenting.
  * @param postId The ID of the post being commented on.
  * @param content The text content of the comment.
+ * @param parentCommentId The ID of the parent comment, if this is a reply.
  * @returns The newly created comment with author info.
  */
-export const createComment = async (userId: string, postId: string, content: string): Promise<Comment> => {
+export const createComment = async (userId: string, postId: string, content: string, parentCommentId?: string): Promise<Comment> => {
     const { data, error } = await supabase
         .from('comments')
-        .insert({ user_id: userId, post_id: postId, content })
+        .insert({ user_id: userId, post_id: postId, content, parent_comment_id: parentCommentId })
         .select('*, profiles(username, level, premium)')
         .single();
 

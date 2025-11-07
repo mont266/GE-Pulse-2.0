@@ -186,9 +186,11 @@ export interface Comment {
   post_id: string;
   content: string;
   created_at: string;
+  parent_comment_id: string | null;
   profiles: { // For author info
     username: string | null;
     level: number;
     premium: boolean;
   };
+  replies?: Comment[]; // Added on client-side
 }
