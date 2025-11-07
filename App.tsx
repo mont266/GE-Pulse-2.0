@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
-import { fetchItemMapping, fetchTimeseries, fetchLatestPrices, fetch1hPrices, fetch24hPrices } from './services/osrsWikiApi';
+import { fetchItemMapping, fetchTimeseries, fetchLatestPrices, fetch1hPrices, fetch24hPrices, fetchAllTimePrices } from './services/osrsWikiApi';
 import { fetchUserWatchlist, addToWatchlist, removeFromWatchlist, getProfile, fetchUserInvestments, addInvestment, closeInvestment, clearUserInvestments, deleteInvestment, getProfileByUsername, fetchAppStats, recordLogin, recordActivity, processClosedTrade, spendAiToken, processMultipleSales, updateInvestment } from './services/database';
 import type { Item, TimeseriesData, LatestPrice, Profile, PriceAlert, Investment, AggregatePrice, LeaderboardEntry, AppStats, ProgressionNotification, ProgressionNotificationData } from './types';
 import { HomePage } from './components/HomePage';
@@ -270,7 +270,7 @@ export default function App() {
     initializeData();
   }, []);
   
-  const handleSelectTimedItem = useCallback(async (item: Item, timeStep: '5m' | '1h' | '6h' = '1h') => {
+  const handleSelectTimedItem = useCallback(async (item: Item, timeStep: '5m' | '1h' | '6h' | 'all' = '1h') => {
     setIsItemLoading(true);
     setSelectedItem(item);
     setCurrentView('item');
@@ -282,7 +282,12 @@ export default function App() {
     });
 
     try {
-      const data = await fetchTimeseries(item.id, timeStep);
+      let data: TimeseriesData[];
+      if (timeStep === 'all') {
+        data = await fetchAllTimePrices(item.id);
+      } else {
+        data = await fetchTimeseries(item.id, timeStep);
+      }
       const sortedData = data.sort((a, b) => a.timestamp - b.timestamp);
       setTimeseries(sortedData);
     } catch (err)      {

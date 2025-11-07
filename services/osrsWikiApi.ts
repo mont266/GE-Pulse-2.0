@@ -1,4 +1,3 @@
-
 import { OSRS_WIKI_API_BASE_URL } from '../constants';
 import type { Item, TimeseriesData, LatestPrice, AggregatePrice } from '../types';
 
@@ -44,5 +43,11 @@ export const fetch24hPrices = async (): Promise<Record<string, AggregatePrice>> 
 
 export const fetchTimeseries = async (id: number, timestep: '5m' | '1h' | '6h'): Promise<TimeseriesData[]> => {
   const response = await apiFetch<{ data: TimeseriesData[] }>(`/timeseries?timestep=${timestep}&id=${id}`);
+  return response.data;
+};
+
+export const fetchAllTimePrices = async (id: number): Promise<TimeseriesData[]> => {
+  // The '24h' timestep returns all available daily data, which serves as our "all time" view.
+  const response = await apiFetch<{ data: TimeseriesData[] }>(`/timeseries?timestep=24h&id=${id}`);
   return response.data;
 };

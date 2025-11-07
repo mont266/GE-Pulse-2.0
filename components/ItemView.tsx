@@ -21,7 +21,7 @@ interface ItemViewProps {
   timeseriesData: TimeseriesData[];
   isLoading: boolean;
   onBack: () => void;
-  onRefresh: (item: Item, timeStep: '5m' | '1h' | '6h') => void;
+  onRefresh: (item: Item, timeStep: '5m' | '1h' | '6h' | 'all') => void;
   onRefreshPrices: () => Promise<void>;
   watchlist: number[];
   toggleWatchlist: (itemId: number) => void;
@@ -37,7 +37,7 @@ interface ItemViewProps {
 }
 
 type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y' | 'ALL';
-type ApiTimeStep = '5m' | '1h' | '6h';
+type ApiTimeStep = '5m' | '1h' | '6h' | 'all';
 
 const timeViewOptions: TimeView[] = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y', 'ALL'];
 const AUTO_REFRESH_SECONDS = 30;
@@ -250,7 +250,8 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   const timeViewToApiTimeStep = (timeView: TimeView): ApiTimeStep => {
     if (['1H', '6H', '1D'].includes(timeView)) return '5m';
     if (timeView === '1W') return '1h';
-    return '6h'; // for 1M, 6M, 1Y, and ALL
+    if (timeView === 'ALL') return 'all';
+    return '6h'; // for 1M, 6M, 1Y
   };
 
   const filteredTimeseriesData = useMemo(() => {

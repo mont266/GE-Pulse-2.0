@@ -61,6 +61,21 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
     const sum = validPrices.reduce((acc, price) => acc + price, 0);
     return sum / validPrices.length;
   }, [data, hasValidPriceData]);
+  
+  // New logic to determine date format based on the time range of the data
+  const timeRangeInSeconds = data.length > 0 ? data[data.length - 1].timestamp - data[0].timestamp : 0;
+  const isLongTimeRange = timeRangeInSeconds > 7 * 24 * 60 * 60; // More than 7 days
+
+  const formatXAxisLabel = (unixTime: number) => {
+      const date = new Date(unixTime * 1000);
+      if (isLongTimeRange) {
+          // For long ranges (like '1M' or 'ALL'), show Month/Year
+          return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+      }
+      // For short ranges, show Time
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
 
   if (data.length === 0 || !hasValidPriceData) {
     return <div className="flex items-center justify-center h-full text-gray-500">No price data available for this period.</div>;
@@ -86,7 +101,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                 dataKey="timestamp" 
                 axisLine={false}
                 tickLine={false}
-                tickFormatter={(unixTime) => new Date(unixTime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                tickFormatter={formatXAxisLabel}
                 stroke="#9ca3af"
                 tick={{ fill: '#9ca3af', fontSize: 12 }}
                 angle={-30}

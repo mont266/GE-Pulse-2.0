@@ -116,6 +116,8 @@ export interface ProgressionNotification {
 }
 
 // --- AI Flipping Assistant Types ---
+// FIX: Updated `webSources` type to allow optional `uri` and `title` properties,
+// matching the structure returned by the Gemini API's `groundingChunks`.
 export interface FlippingSuggestion {
     itemId: number;
     itemName: string;
@@ -130,8 +132,8 @@ export interface FlippingSuggestion {
     flipVelocity: 'Very High' | 'High' | 'Medium' | 'Low';
     webSources?: {
       web?: {
-        uri: string;
-        title: string;
+        uri?: string;
+        title?: string;
       }
     }[];
 }
