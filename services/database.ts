@@ -463,6 +463,30 @@ export const banUser = async (targetUserId: string): Promise<void> => {
     }
 };
 
+/**
+ * Gives a specified number of AI tokens to a user. Developer only.
+ * @param targetUserId The UUID of the user to give tokens to.
+ * @param amount The number of tokens to give.
+ * @returns The new total token count for the user.
+ */
+export const giveUserTokens = async (targetUserId: string, amount: number): Promise<number> => {
+    const { data, error } = await supabase.rpc('give_user_tokens', {
+        target_user_id: targetUserId,
+        token_amount: amount,
+    });
+
+    if (error) {
+        console.error(`Error giving tokens to user ${targetUserId}:`, error);
+        throw error;
+    }
+
+    if (typeof data !== 'number') {
+        throw new Error('RPC function `give_user_tokens` did not return the new token count.');
+    }
+
+    return data;
+};
+
 // --- Progression System Functions ---
 
 export const recordLogin = async (userId: string): Promise<ProgressionNotificationData[]> => {

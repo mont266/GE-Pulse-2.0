@@ -2,10 +2,10 @@
 
 import React, { useState } from 'react';
 import type { Profile } from '../types';
-import { UserIcon, ArrowLeftIcon, BriefcaseIcon, CodeIcon, BarChartIcon, ShieldCheckIcon, SlashIcon, ShieldOffIcon, FlameIcon, TrophyIcon, StarIcon } from './icons/Icons';
+import { UserIcon, ArrowLeftIcon, BriefcaseIcon, CodeIcon, BarChartIcon, ShieldCheckIcon, SlashIcon, ShieldOffIcon, FlameIcon, TrophyIcon, StarIcon, BotIcon } from './icons/Icons';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
-import { setUserRole, banUser } from '../services/database';
+import { setUserRole, banUser, giveUserTokens } from '../services/database';
 import { Loader } from './ui/Loader';
 import { getRankForLevel, getTotalXpForLevel } from '../utils/progression';
 import { AchievementsModal } from './AchievementsModal';
@@ -37,6 +37,8 @@ const AdminControls: React.FC<{
     const [isBanConfirmOpen, setIsBanConfirmOpen] = React.useState(false);
     const [isBanning, setIsBanning] = React.useState(false);
     const [error, setError] = React.useState<string | null>(null);
+    const [tokenAmount, setTokenAmount] = React.useState('');
+    const [isGivingTokens, setIsGivingTokens] = React.useState(false);
 
     const handleRoleChange = async (role: 'developer' | 'beta_tester', newStatus: boolean) => {
         const setLoading = role === 'developer' ? setIsDevLoading : setIsBetaLoading;
@@ -63,6 +65,26 @@ const AdminControls: React.FC<{
             setError(err.message || 'Failed to ban user.');
         } finally {
             setIsBanning(false);
+        }
+    };
+
+    const handleGiveTokens = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const amount = parseInt(tokenAmount, 10);
+        if (isNaN(amount) || amount <= 0) {
+            setError('Please enter a valid positive number of tokens.');
+            return;
+        }
+        setIsGivingTokens(true);
+        setError(null);
+        try {
+            const newTotal = await giveUserTokens(profile.id, amount);
+            onUpdate({ tokens: newTotal });
+            setTokenAmount('');
+        } catch (err: any) {
+            setError(err.message || 'Failed to give tokens.');
+        } finally {
+            setIsGivingTokens(false);
         }
     };
     
@@ -136,6 +158,27 @@ const AdminControls: React.FC<{
                     <ToggleSwitch label="Developer" checked={!!profile.developer} onChange={(status) => handleRoleChange('developer', status)} loading={isDevLoading} color="yellow" />
                     <ToggleSwitch label="Beta Tester" checked={!!profile.beta_tester} onChange={(status) => handleRoleChange('beta_tester', status)} loading={isBetaLoading} color="blue" />
                     
+                     <form onSubmit={handleGiveTokens} className="pt-4 border-t border-gray-700/50">
+                        <label className="text-gray-300 font-medium mb-2 block">Give AI Tokens</label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="number"
+                                value={tokenAmount}
+                                onChange={(e) => setTokenAmount(e.target.value)}
+                                placeholder="Amount"
+                                className="flex-grow p-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition text-sm"
+                                min="1"
+                            />
+                            <Button
+                                type="submit"
+                                variant="secondary"
+                                disabled={isGivingTokens || !tokenAmount}
+                            >
+                                {isGivingTokens ? <Loader size="sm" /> : 'Give'}
+                            </Button>
+                        </div>
+                    </form>
+
                     <div className="pt-4 border-t border-gray-700/50">
                          <Button
                             variant="ghost"
@@ -251,7 +294,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ profile, viewerProfile
               <div className="w-full bg-gray-700 rounded-full h-4 border border-gray-600">
                   <div className="bg-emerald-500 h-full rounded-full transition-all duration-500" style={{width: `${levelProgress}%`}}></div>
               </div>
-              <div className="mt-4 flex items-center gap-6">
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-6">
                   <div>
                       <p className="text-sm text-gray-400">Total XP</p>
                       <p className="text-xl font-bold text-white">{profile.xp.toLocaleString()}</p>
@@ -261,6 +304,13 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ profile, viewerProfile
                       <p className="text-xl font-bold">
                           <ProfitText value={totalProfit} />
                       </p>
+                  </div>
+                   <div>
+                      <p className="text-sm text-gray-400 flex items-center gap-1.5">
+                        <BotIcon className="w-4 h-4 text-emerald-400" />
+                        AI Tokens
+                      </p>
+                      <p className="text-xl font-bold text-white">{profile.tokens}</p>
                   </div>
               </div>
             </Card>

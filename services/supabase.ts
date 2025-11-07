@@ -314,6 +314,13 @@ export type Database = {
         }
         Returns: number
       }
+      give_user_tokens: {
+        Args: {
+          target_user_id: string
+          token_amount: number
+        }
+        Returns: number
+      }
       set_user_role: {
         Args: {
           target_user_id: string
