@@ -363,19 +363,16 @@ export type Database = {
 
 
 // --- IMPORTANT ---
-// 1. Create a project at https://supabase.com/
-// 2. Go to your project's "Project Settings"
-// 3. Go to the "API" section
-// 4. Find your "Project URL" and "anon" "public" key
-// 5. Paste them as strings into the variables below
+// Keys are now read from environment variables.
+// For local development, create a .env file in the root directory.
+// For production (e.g., Netlify), set these in your site's environment settings.
 
-const supabaseUrl = 'https://ascgkrirlbrffbuizgnm.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzY2drcmlybGJyZmZidWl6Z25tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2MjMyNTAsImV4cCI6MjA2ODE5OTI1MH0.XWpApEJMRK7czCU-3y5OmFhH2qjjOUU2N8hv7Ss8udg';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// --- END OF CONFIG  ---
 
-if (supabaseUrl === 'https://ascgkrirlbrffbuizgnm.supabase.co' || supabaseAnonKey === 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFzY2drcmlybGJyZmZidWl6Z25tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI2MjMyNTAsImV4cCI6MjA2ODE5OTI1MH0.XWpApEJMRK7czCU-3y5OmFhH2qjjOUU2N8hv7Ss8udg') {
-    console.warn("Supabase credentials are not set. Please update services/supabase.ts. Authentication will not work.");
+if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn("Supabase credentials are not set in environment variables. Please create a .env file for local development or set them in your hosting provider. Authentication will not work.");
 }
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient<Database>(supabaseUrl as string, supabaseAnonKey as string);

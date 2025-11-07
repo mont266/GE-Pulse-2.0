@@ -438,7 +438,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
 
         Return the entire response as a single JSON object.`;
 
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+        const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY as string });
 
         const responseSchema = {
             type: Type.OBJECT,
