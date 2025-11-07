@@ -3,8 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 import { Card } from './ui/Card';
 import { Loader } from './ui/Loader';
 import { Button } from './ui/Button';
-import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon } from './icons/Icons';
-import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost } from '../services/database';
+import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon, ChevronRightIcon } from './icons/Icons';
+import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost, deleteComment } from '../services/database';
 import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData } from '../types';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -16,6 +16,8 @@ interface CommunityPageProps {
     items: Record<string, Item>;
     onSelectItem: (item: Item) => void;
 }
+
+const MAX_VISIBLE_DEPTH = 3;
 
 const timeAgo = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -263,11 +265,18 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
     const [allComments, setAllComments] = useState<Comment[]>([]); // Flat list for easier updates
     const [isCommentsLoading, setIsCommentsLoading] = useState(false);
     const [commentCount, setCommentCount] = useState(post.comment_count);
-    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
-    const [isDeleting, setIsDeleting] = useState(false);
-    const [deleteError, setDeleteError] = useState<string | null>(null);
+    
+    // State for deleting posts
+    const [isDeletePostConfirmOpen, setIsDeletePostConfirmOpen] = useState(false);
+    const [isDeletingPost, setIsDeletingPost] = useState(false);
+    const [deletePostError, setDeletePostError] = useState<string | null>(null);
 
-    const canDelete = profile && (profile.id === post.user_id || profile.developer);
+    // State for deleting comments
+    const [commentToDelete, setCommentToDelete] = useState<Comment | null>(null);
+    const [isDeletingComment, setIsDeletingComment] = useState(false);
+    const [deleteCommentError, setDeleteCommentError] = useState<string | null>(null);
+
+    const canDeletePost = profile && (profile.id === post.user_id || profile.developer);
     
     const handleToggleComments = async () => {
         const currentlyOpen = isCommentsOpen;
@@ -293,32 +302,78 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
         setCommentCount(prev => prev + 1);
     };
     
-    const handleConfirmDelete = async () => {
-        setIsDeleting(true);
-        setDeleteError(null);
+    const handleConfirmDeletePost = async () => {
+        setIsDeletingPost(true);
+        setDeletePostError(null);
         try {
             await deletePost(post.id);
             onPostDeleted(post.id);
-            setIsDeleteConfirmOpen(false);
+            setIsDeletePostConfirmOpen(false);
         } catch (err: any) {
-            setDeleteError(err.message || "Failed to delete post.");
+            setDeletePostError(err.message || "Failed to delete post.");
         } finally {
-            setIsDeleting(false);
+            setIsDeletingPost(false);
         }
     };
+
+    const handleConfirmDeleteComment = async () => {
+        if (!commentToDelete) return;
+        setIsDeletingComment(true);
+        setDeleteCommentError(null);
+        try {
+            await deleteComment(commentToDelete.id);
+
+            const idsToDelete = new Set<string>();
+            const queue: string[] = [commentToDelete.id];
+            idsToDelete.add(commentToDelete.id);
+
+            // Using the flat list `allComments`, find all children, grandchildren, etc.
+            while (queue.length > 0) {
+                const currentId = queue.shift()!;
+                for (const c of allComments) {
+                    if (c.parent_comment_id === currentId) {
+                        idsToDelete.add(c.id);
+                        queue.push(c.id);
+                    }
+                }
+            }
+
+            const newAllComments = allComments.filter(c => !idsToDelete.has(c.id));
+            setAllComments(newAllComments);
+            setCommentTree(buildCommentTree(newAllComments));
+            setCommentCount(prev => prev - idsToDelete.size);
+            setCommentToDelete(null);
+
+        } catch (err: any) {
+            setDeleteCommentError(err.message || "Failed to delete comment.");
+        } finally {
+            setIsDeletingComment(false);
+        }
+    };
+
 
     const item = post.flip_data ? items[post.flip_data.item_id] : null;
 
     return (
         <>
-            {isDeleteConfirmOpen && (
+            {isDeletePostConfirmOpen && (
                 <DeleteConfirmationModal
                     title="Delete Post"
-                    message={<>Are you sure you want to permanently delete this post? This action cannot be undone.</>}
-                    onClose={() => setIsDeleteConfirmOpen(false)}
-                    onConfirm={handleConfirmDelete}
-                    isLoading={isDeleting}
-                    error={deleteError}
+                    message={<>Are you sure you want to permanently delete this post and all its comments? This action cannot be undone.</>}
+                    onClose={() => setIsDeletePostConfirmOpen(false)}
+                    onConfirm={handleConfirmDeletePost}
+                    isLoading={isDeletingPost}
+                    error={deletePostError}
+                />
+            )}
+             {commentToDelete && (
+                <DeleteConfirmationModal
+                    title="Delete Comment"
+                    message="Are you sure you want to permanently delete this comment and all its replies? This action cannot be undone."
+                    onClose={() => setCommentToDelete(null)}
+                    onConfirm={handleConfirmDeleteComment}
+                    isLoading={isDeletingComment}
+                    error={deleteCommentError}
                 />
             )}
             <Card className="p-5">
@@ -331,9 +386,9 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
                                 {post.profiles.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
                                 <span className="text-gray-400 text-sm">· {timeAgo(post.created_at)}</span>
                             </div>
-                            {canDelete && (
+                            {canDeletePost && (
                                 <button 
-                                    onClick={() => { setDeleteError(null); setIsDeleteConfirmOpen(true); }} 
+                                    onClick={() => { setDeletePostError(null); setIsDeletePostConfirmOpen(true); }} 
                                     className="p-1 -m-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0" 
                                     aria-label="Delete post"
                                     title="Delete post"
@@ -365,8 +420,10 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
                                     key={c.id} 
                                     comment={c} 
                                     session={session}
+                                    profile={profile}
                                     onViewProfile={onViewProfile}
                                     onCommentAdded={handleCommentAdded}
+                                    onSetCommentToDelete={setCommentToDelete}
                                 />
                             ))
                         ) : (
@@ -404,23 +461,40 @@ const FlipPost: React.FC<{ flip: FlipData; item: Item; onSelectItem: (item: Item
     )
 };
 
-const CommentCard: React.FC<{ comment: Comment; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onCommentAdded: (comment: Comment) => void; depth?: number; }> = ({ comment, session, onViewProfile, onCommentAdded, depth = 0 }) => {
+const CommentCard: React.FC<{ comment: Comment; session: Session | null; profile: Profile | null; onViewProfile: (user: {username: string | null}) => void; onCommentAdded: (comment: Comment) => void; onSetCommentToDelete: (comment: Comment) => void; depth?: number; }> = ({ comment, session, profile, onViewProfile, onCommentAdded, onSetCommentToDelete, depth = 0 }) => {
     const [isReplying, setIsReplying] = useState(false);
-    
+    const [isExpanded, setIsExpanded] = useState(false);
+    const canDelete = profile && (profile.id === comment.user_id || profile.developer);
+
+    const hasReplies = comment.replies && comment.replies.length > 0;
+    const isDeepThread = depth >= MAX_VISIBLE_DEPTH;
+
     return (
         <div className="flex items-start gap-3">
-            <div className="flex-shrink-0">
+            <div className="flex-shrink-0 flex flex-col items-center">
                 <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full mt-1"/>
-                {comment.replies && comment.replies.length > 0 && (
-                    <div className="w-0.5 bg-gray-600/50 mx-auto h-full mt-1"></div>
+                {hasReplies && (
+                    <div className="w-0.5 bg-gray-600/50 flex-grow mt-1"></div>
                 )}
             </div>
             <div className="flex-1">
                 <div className="bg-gray-700/40 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => onViewProfile({ username: comment.profiles.username })} className="font-bold text-white text-sm hover:underline">{comment.profiles.username || 'Anonymous'}</button>
-                        {comment.profiles.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
-                        <span className="text-gray-500 text-xs">· {timeAgo(comment.created_at)}</span>
+                    <div className="flex justify-between items-start gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <button onClick={() => onViewProfile({ username: comment.profiles.username })} className="font-bold text-white text-sm hover:underline">{comment.profiles.username || 'Anonymous'}</button>
+                            {comment.profiles.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
+                            <span className="text-gray-500 text-xs">· {timeAgo(comment.created_at)}</span>
+                        </div>
+                        {canDelete && (
+                            <button
+                                onClick={() => onSetCommentToDelete(comment)}
+                                className="p-1 -m-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
+                                aria-label="Delete comment"
+                                title="Delete comment"
+                            >
+                                <Trash2Icon className="w-3 h-3" />
+                            </button>
+                        )}
                     </div>
                     <p className="text-gray-300 text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
                 </div>
@@ -445,18 +519,34 @@ const CommentCard: React.FC<{ comment: Comment; session: Session | null; onViewP
                         />
                     </div>
                 )}
-                {comment.replies && comment.replies.length > 0 && (
+                {hasReplies && (
                     <div className="mt-4 space-y-4">
-                        {comment.replies.map(reply => (
-                            <CommentCard 
-                                key={reply.id} 
-                                comment={reply} 
-                                session={session}
-                                onViewProfile={onViewProfile} 
-                                onCommentAdded={onCommentAdded}
-                                depth={depth + 1} 
-                            />
-                        ))}
+                        {isDeepThread && !isExpanded ? (
+                             <div className="flex items-center gap-2">
+                                <div className="w-8 h-px bg-gray-700"></div>
+                                <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={() => setIsExpanded(true)}
+                                    className="text-xs text-emerald-400 hover:text-emerald-300 h-auto py-1 px-2"
+                                >
+                                    Show {comment.replies?.length} more repl{comment.replies?.length === 1 ? 'y' : 'ies'}
+                                </Button>
+                            </div>
+                        ) : (
+                            comment.replies?.map(reply => (
+                                <CommentCard 
+                                    key={reply.id} 
+                                    comment={reply} 
+                                    session={session}
+                                    profile={profile}
+                                    onViewProfile={onViewProfile} 
+                                    onCommentAdded={onCommentAdded}
+                                    onSetCommentToDelete={onSetCommentToDelete}
+                                    depth={depth + 1} 
+                                />
+                            ))
+                        )}
                     </div>
                 )}
             </div>

@@ -1,7 +1,3 @@
-
-
-
-
 import { supabase, Json } from './supabase';
 import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats, Post, FlipData, Comment } from '../types';
 
@@ -647,5 +643,26 @@ export const deletePost = async (postId: string): Promise<void> => {
     if (count === 0) {
         // This can happen if the post was already deleted, or if RLS prevents the action.
         throw new Error('Post not found or you do not have permission to delete it.');
+    }
+};
+
+/**
+ * Deletes a comment from the database.
+ * RLS policies should ensure only the owner or an admin can perform this action.
+ * @param commentId The ID of the comment to delete.
+ */
+export const deleteComment = async (commentId: string): Promise<void> => {
+    const { error, count } = await supabase
+        .from('comments')
+        .delete({ count: 'exact' })
+        .eq('id', commentId);
+
+    if (error) {
+        console.error('Error deleting comment:', error);
+        throw error;
+    }
+
+    if (count === 0) {
+        throw new Error('Comment not found or you do not have permission to delete it.');
     }
 };
