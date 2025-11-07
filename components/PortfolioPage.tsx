@@ -8,7 +8,6 @@ import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../uti
 import { SellInvestmentModal } from './SellInvestmentModal';
 import { EditInvestmentModal } from './EditInvestmentModal';
 import { Loader } from './ui/Loader';
-import { fetchTimeseries } from '../services/osrsWikiApi';
 import { PortfolioChart } from './PortfolioChart';
 
 
@@ -28,6 +27,24 @@ type TimeRange = '1M' | '3M' | '1Y' | 'ALL';
 
 type NumberFormat = 'raw' | 'short';
 
+const TooltipSpan: React.FC<{ children: React.ReactNode; fullValue: string }> = ({ children, fullValue }) => (
+    <span className="relative group cursor-help">
+        {children}
+        <span
+            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max
+                      bg-gray-900 text-white text-xs font-semibold
+                      rounded-md py-1.5 px-3 shadow-lg border border-gray-700/50
+                      opacity-0 group-hover:opacity-100 transition-opacity duration-200
+                      pointer-events-none z-10"
+            role="tooltip"
+        >
+            {fullValue} gp
+            <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 transform rotate-45 border-b border-r border-gray-700/50"></div>
+        </span>
+    </span>
+);
+
+
 export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items, latestPrices, onCloseInvestment, onClearPortfolio, onDeleteInvestment, onEditInvestment, onRefreshPrices, onSelectItem }) => {
     const [investmentToSell, setInvestmentToSell] = useState<Investment | null>(null);
     const [investmentToEdit, setInvestmentToEdit] = useState<Investment | null>(null);
@@ -46,17 +63,33 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     const [numberFormat, setNumberFormat] = useState<NumberFormat>('short');
     const [isRefreshing, setIsRefreshing] = useState(false);
 
-    const ProfitText: React.FC<{ value: number, format: NumberFormat }> = ({ value, format }) => {
+    const ProfitText: React.FC<{ value: number; format: NumberFormat }> = ({ value, format }) => {
         const colorClass = value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-400' : 'text-gray-400';
         const sign = value > 0 ? '+' : '';
-        
-        const formattedValue = format === 'raw'
-            ? value.toLocaleString()
-            : formatLargeNumber(value);
-
-        const displayValue = value > 0 ? `${sign}${formattedValue}` : formattedValue;
-
-        return <span className={colorClass}>{displayValue} gp</span>;
+        const formattedValue = format === 'raw' ? value.toLocaleString() : formatLargeNumber(value);
+        const displayValue = `${sign}${formattedValue} gp`;
+    
+        if (format === 'short') {
+            return (
+                <TooltipSpan fullValue={`${sign}${value.toLocaleString()}`}>
+                    <span className={colorClass}>{displayValue}</span>
+                </TooltipSpan>
+            );
+        }
+        return <span className={colorClass}>{displayValue}</span>;
+    };
+    
+    const FormattedGP: React.FC<{ value: number; format: NumberFormat; className?: string }> = ({ value, format, className = '' }) => {
+        const displayValue = (format === 'raw' ? value.toLocaleString() : formatLargeNumber(value)) + ' gp';
+    
+        if (format === 'short') {
+            return (
+                <TooltipSpan fullValue={value.toLocaleString()}>
+                    <span className={className}>{displayValue}</span>
+                </TooltipSpan>
+            );
+        }
+        return <span className={className}>{displayValue}</span>;
     };
 
     const handleRefresh = async () => {
@@ -66,9 +99,17 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     };
 
     useEffect(() => {
-        const calculateHistory = async () => {
-            const openPositionsForHistory = investments.filter((inv: Investment) => inv.sell_price === null);
-            if (openPositionsForHistory.length === 0) {
+        const calculateHistory = () => {
+            const closedPositionsForHistory = investments
+                .filter(inv => inv.sell_price !== null && inv.sell_date !== null)
+                .map(inv => ({
+                    ...inv,
+                    sell_date_obj: new Date(inv.sell_date!),
+                    profit: ((inv.sell_price! - inv.purchase_price) * inv.quantity) - (inv.tax_paid ?? 0)
+                }))
+                .sort((a, b) => a.sell_date_obj.getTime() - b.sell_date_obj.getTime());
+
+            if (closedPositionsForHistory.length === 0) {
                 setPortfolioHistory([]);
                 setIsHistoryLoading(false);
                 return;
@@ -76,83 +117,49 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
 
             setIsHistoryLoading(true);
 
-            const itemIds = [...new Set(openPositionsForHistory.map(inv => inv.item_id))];
-            
-            const timeseriesResponses = await Promise.allSettled(
-                itemIds.map(id => fetchTimeseries(id, '6h'))
-            );
-
-            const priceDataMap = new Map<number, { timestamp: number; price: number }[]>();
-            // Replaced `forEach` with a `for...of` loop to ensure correct type narrowing for `Promise.allSettled` results.
-            for (const [index, result] of timeseriesResponses.entries()) {
-                if (result.status === 'fulfilled') {
-                    const itemId = itemIds[index];
-                    const cleanedData = result.value
-                        .map((d: TimeseriesData) => ({ timestamp: d.timestamp, price: d.avgHighPrice }))
-                        .filter((d): d is { timestamp: number; price: number } => d.price !== null);
-                    priceDataMap.set(itemId, cleanedData.sort((a,b) => a.timestamp - b.timestamp));
-                }
-            }
-
             const getStartDate = (): Date => {
                 const now = new Date();
                 switch (timeRange) {
                     case '1M': return new Date(now.setMonth(now.getMonth() - 1));
                     case '3M': return new Date(now.setMonth(now.getMonth() - 3));
                     case '1Y': return new Date(now.setFullYear(now.getFullYear() - 1));
-                    case 'ALL': {
-                        if (investments.length === 0) {
-                            return new Date();
-                        }
-                        // FIX: Get numeric timestamps from dates to use with Math.min and filter out any invalid dates.
-                        const purchaseTimestamps = investments
-                            .map((inv: Investment) => new Date(inv.purchase_date).getTime());
-                        const validTimestamps = purchaseTimestamps.filter(ts => !isNaN(ts));
-
-                        // FIX: The spread operator on an array of numbers is safe here, removing a failing explicit cast.
-                        // Fix for error on line 82
-                        const firstPurchaseTimestamp = validTimestamps.length > 0 ? Math.min(...validTimestamps) : Date.now();
-                        return new Date(firstPurchaseTimestamp);
-                    }
+                    case 'ALL': return closedPositionsForHistory[0].sell_date_obj;
                 }
             };
 
             const startDate = getStartDate();
-            startDate.setHours(0,0,0,0);
+            startDate.setHours(0, 0, 0, 0);
             const endDate = new Date();
             const dateArray: Date[] = [];
             let currentDate = new Date(startDate);
-            // FIX: Use .getTime() to compare dates as numbers for reliable comparison.
-            // FIX: Removed failing explicit cast to number.
-            // Fix for error on line 93
+            
             while (currentDate.getTime() <= endDate.getTime()) {
                 dateArray.push(new Date(currentDate));
                 currentDate.setDate(currentDate.getDate() + 1);
             }
 
+            let cumulativeProfit = 0;
+            let tradeIndex = 0;
+            
+            // Calculate profit accumulated *before* the current chart's start date
+            const initialProfit = closedPositionsForHistory
+                .filter(trade => trade.sell_date_obj.getTime() < startDate.getTime())
+                .reduce((sum, trade) => sum + trade.profit, 0);
+            
+            cumulativeProfit = initialProfit;
+
+            // Find the first trade that is within our date range
+            while (tradeIndex < closedPositionsForHistory.length && closedPositionsForHistory[tradeIndex].sell_date_obj.getTime() < startDate.getTime()) {
+                tradeIndex++;
+            }
+
             const history = dateArray.map(date => {
                 const dateTimestamp = date.getTime();
-                let dailyValue = 0;
-
-                openPositionsForHistory.forEach(inv => {
-                    const purchaseDate = new Date(inv.purchase_date);
-                    purchaseDate.setHours(0,0,0,0);
-                    
-                    if (purchaseDate.getTime() <= dateTimestamp) {
-                        const itemPriceHistory = priceDataMap.get(inv.item_id);
-                        let priceOnDate = inv.purchase_price;
-
-                        if (itemPriceHistory && itemPriceHistory.length > 0) {
-                            const pricePoint = [...itemPriceHistory].reverse().find(p => p.timestamp * 1000 <= dateTimestamp);
-                            if (pricePoint) {
-                                priceOnDate = pricePoint.price;
-                            }
-                        }
-                        dailyValue += inv.quantity * priceOnDate;
-                    }
-                });
-
-                return { date: date.toISOString().split('T')[0], value: dailyValue };
+                while (tradeIndex < closedPositionsForHistory.length && closedPositionsForHistory[tradeIndex].sell_date_obj.getTime() <= dateTimestamp) {
+                    cumulativeProfit += closedPositionsForHistory[tradeIndex].profit;
+                    tradeIndex++;
+                }
+                return { date: date.toISOString().split('T')[0], value: cumulativeProfit };
             });
 
             setPortfolioHistory(history);
@@ -355,7 +362,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <Card>
                     <p className="text-sm text-gray-400">Portfolio Value</p>
-                    <p className="text-2xl font-bold text-white">{(numberFormat === 'raw' ? summaryStats.totalValue.toLocaleString() : formatLargeNumber(summaryStats.totalValue))} gp</p>
+                    <p className="text-2xl font-bold text-white"><FormattedGP value={summaryStats.totalValue} format={numberFormat} /></p>
                 </Card>
                 <Card>
                     <p className="text-sm text-gray-400">Unrealised P/L</p>
@@ -367,7 +374,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                 </Card>
                 <Card>
                     <p className="text-sm text-gray-400">Total Tax Paid</p>
-                    <p className="text-2xl font-bold text-red-400">-{(numberFormat === 'raw' ? summaryStats.totalTaxPaid.toLocaleString() : formatLargeNumber(summaryStats.totalTaxPaid))} gp</p>
+                    <p className="text-2xl font-bold text-red-400">-<FormattedGP value={summaryStats.totalTaxPaid} format={numberFormat} /></p>
                 </Card>
             </div>
 
@@ -375,7 +382,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
             <div className="mb-8">
                 <Card>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-bold text-white">Portfolio Performance</h3>
+                        <h3 className="text-xl font-bold text-white">Cumulative Realised P/L</h3>
                         <div className="flex items-center gap-1 bg-gray-900/50 p-1 rounded-lg">
                             {(['1M', '3M', '1Y', 'ALL'] as TimeRange[]).map(range => (
                                 <Button
@@ -424,11 +431,11 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                                         <button onClick={() => onSelectItem(item)} className="font-bold text-white text-left hover:underline hover:text-emerald-300 transition-colors">
                                             {item.name}
                                         </button>
-                                        <p className="text-sm text-gray-400">{inv.quantity.toLocaleString()} @ {(numberFormat === 'raw' ? inv.purchase_price.toLocaleString() : formatLargeNumber(inv.purchase_price))} gp</p>
+                                        <p className="text-sm text-gray-400">{inv.quantity.toLocaleString()} @ <FormattedGP value={inv.purchase_price} format={numberFormat} /></p>
                                     </div>
                                     <div className="text-sm">
                                         <p className="text-gray-400">Current Value</p>
-                                        <p className="font-semibold">{(numberFormat === 'raw' ? currentValue.toLocaleString() : formatLargeNumber(currentValue))} gp</p>
+                                        <p className="font-semibold"><FormattedGP value={currentValue} format={numberFormat} /></p>
                                     </div>
                                     <div className="text-sm">
                                         <p className="text-gray-400">Unrealised P/L</p>
@@ -469,8 +476,8 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                                         <p className="text-sm text-gray-400">{inv.quantity.toLocaleString()} units</p>
                                     </div>
                                     <div className="text-sm">
-                                        <p className="text-gray-400">Buy: {(numberFormat === 'raw' ? inv.purchase_price.toLocaleString() : formatLargeNumber(inv.purchase_price))}</p>
-                                        <p className="text-gray-400">Sell: {(numberFormat === 'raw' ? inv.sell_price.toLocaleString() : formatLargeNumber(inv.sell_price))}</p>
+                                        <p className="text-gray-400">Buy: <FormattedGP value={inv.purchase_price} format={numberFormat} /></p>
+                                        <p className="text-gray-400">Sell: <FormattedGP value={inv.sell_price} format={numberFormat} /></p>
                                     </div>
                                     <div className="flex-grow flex items-center justify-between gap-4">
                                         <div className="text-sm">

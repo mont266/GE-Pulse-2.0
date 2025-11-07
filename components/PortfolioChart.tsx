@@ -13,10 +13,13 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
             day: 'numeric',
             timeZone: 'UTC'
         });
+      const profit = payload[0].value;
+      const profitColor = profit > 0 ? 'text-emerald-400' : profit < 0 ? 'text-red-400' : 'text-white';
+
       return (
         <div className="bg-gray-800/80 backdrop-blur-sm p-3 border border-gray-600 rounded-lg shadow-lg">
           <p className="text-sm text-gray-300">{formattedDate}</p>
-          <p className="font-bold text-emerald-400">Value: {payload[0].value.toLocaleString()} gp</p>
+          <p className={`font-bold ${profitColor}`}>Cumulative P/L: {profit.toLocaleString()} gp</p>
         </div>
       );
     }
@@ -24,10 +27,10 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
 };
 
 export const PortfolioChart: React.FC<PortfolioChartProps> = ({ data }) => {
-  if (data.filter(d => d.value > 0).length < 2) {
+  if (data.length < 2) {
     return (
-      <div className="flex items-center justify-center h-full text-gray-500">
-        Not enough data to display chart. Add more open investments to see performance over time.
+      <div className="flex items-center justify-center h-full text-gray-500 text-center p-4">
+        Not enough trade history to display chart. Close some trades to see your performance over time.
       </div>
     );
   }
@@ -43,14 +46,20 @@ export const PortfolioChart: React.FC<PortfolioChartProps> = ({ data }) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
+  
+  const hasProfit = data.some(d => d.value > 0);
+  const hasLoss = data.some(d => d.value < 0);
+  
+  const strokeColor = hasProfit ? "#10b981" : hasLoss ? "#f87171" : "#9ca3af";
+  const gradientId = "portfolioGradient";
 
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={data} margin={{ top: 5, right: 5, left: 15, bottom: 5 }}>
         <defs>
-            <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
-                <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor={strokeColor} stopOpacity={0.4}/>
+                <stop offset="95%" stopColor={strokeColor} stopOpacity={0}/>
             </linearGradient>
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -67,7 +76,7 @@ export const PortfolioChart: React.FC<PortfolioChartProps> = ({ data }) => {
             tickFormatter={formatYAxis}
             stroke="#9ca3af"
             tick={{ fill: '#9ca3af', fontSize: 12 }}
-            domain={['dataMin', 'auto']}
+            domain={['auto', 'auto']}
             width={60}
             axisLine={false}
             tickLine={false}
@@ -76,10 +85,10 @@ export const PortfolioChart: React.FC<PortfolioChartProps> = ({ data }) => {
         <Area 
             type="monotone" 
             dataKey="value" 
-            stroke="#10b981" 
+            stroke={strokeColor} 
             strokeWidth={2} 
             fillOpacity={1} 
-            fill="url(#colorValue)" 
+            fill={`url(#${gradientId})`}
             connectNulls={false}
         />
       </AreaChart>

@@ -5,7 +5,7 @@ import { supabase } from './services/supabase';
 import { fetchItemMapping, fetchTimeseries, fetchLatestPrices, fetch1hPrices, fetch24hPrices } from './services/osrsWikiApi';
 import { fetchUserWatchlist, addToWatchlist, removeFromWatchlist, getProfile, fetchUserInvestments, addInvestment, closeInvestment, clearUserInvestments, deleteInvestment, getProfileByUsername, fetchAppStats, recordLogin, recordActivity, processClosedTrade, spendAiToken, processMultipleSales, updateInvestment } from './services/database';
 import type { Item, TimeseriesData, LatestPrice, Profile, PriceAlert, Investment, AggregatePrice, LeaderboardEntry, AppStats, ProgressionNotification, ProgressionNotificationData } from './types';
-import { SearchBar } from './components/SearchBar';
+import { HomePage } from './components/HomePage';
 import { ItemView } from './components/ItemView';
 import { Watchlist } from './components/Watchlist';
 import { AlertsPage } from './components/AlertsPage';
@@ -18,7 +18,7 @@ import { CommunityPage } from './components/CommunityPage';
 import { AddInvestmentModal } from './components/AddInvestmentModal';
 import { StatsPage } from './components/StatsPage';
 import { FlippingAssistantPage } from './components/FlippingAssistantPage';
-import { PulseIcon, SearchIcon, StarIcon, UserIcon, LogOutIcon, SettingsIcon, UserSquareIcon, BellIcon, LogInIcon, BriefcaseIcon, TrendingUpIcon, UsersIcon, BarChartIcon, BotIcon } from './components/icons/Icons';
+import { PulseIcon, HomeIcon, StarIcon, UserIcon, LogOutIcon, SettingsIcon, UserSquareIcon, BellIcon, LogInIcon, BriefcaseIcon, TrendingUpIcon, UsersIcon, BarChartIcon, BotIcon } from './components/icons/Icons';
 import { Loader } from './components/ui/Loader';
 import { Button } from './components/ui/Button';
 import { useLocalStorage } from './hooks/useLocalStorage';
@@ -26,12 +26,12 @@ import { TooltipWrapper } from './components/ui/Tooltip';
 import { ProgressionNotifications } from './components/ProgressionNotifications';
 
 
-type View = 'search' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'movers' | 'community' | 'stats' | 'assistant';
+type View = 'home' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'movers' | 'community' | 'stats' | 'assistant';
 type ProfileWithEmail = Profile & { email: string | null };
 type ViewedProfileData = { profile: Profile; profit: number };
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<View>('search');
+  const [currentView, setCurrentView] = useState<View>('home');
   const [items, setItems] = useState<Record<string, Item>>({});
   const [latestPrices, setLatestPrices] = useState<Record<string, LatestPrice>>({});
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
@@ -149,7 +149,7 @@ export default function App() {
         } else {
             setProfile(null);
             loggedInSince.current = null;
-            setCurrentView('search'); // Go to search on logout
+            setCurrentView('home'); // Go to home on logout
         }
     });
 
@@ -215,7 +215,7 @@ export default function App() {
   // --- Fetch Top Movers Data ---
   useEffect(() => {
       const loadMoversData = async () => {
-          if ((currentView === 'movers' || currentView === 'assistant') && (Object.keys(oneHourPrices).length === 0 || Object.keys(twentyFourHourPrices).length === 0)) {
+          if ((currentView === 'home' || currentView === 'movers' || currentView === 'assistant') && (Object.keys(oneHourPrices).length === 0 || Object.keys(twentyFourHourPrices).length === 0)) {
               setIsMoversLoading(true);
               setError(null);
               try {
@@ -359,7 +359,7 @@ export default function App() {
   };
 
   const handleBack = () => {
-    switchView('search');
+    switchView('home');
   }
 
   const toggleWatchlist = useCallback(async (itemId: number) => {
@@ -417,7 +417,7 @@ export default function App() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setIsProfileMenuOpen(false);
-    switchView('search');
+    switchView('home');
   };
 
   const handleProfileUpdate = (updatedProfile: Profile) => {
@@ -636,14 +636,16 @@ export default function App() {
             onSetAlertActivity={handleSetAlertActivity}
           />
         );
-      case 'search':
-        return <SearchBar 
+      case 'home':
+        return <HomePage 
                     items={Object.values(items)} 
                     onSelectItem={handleItemSelection} 
                     latestPrices={latestPrices}
                     recentlyViewedIds={recentlyViewed}
                     allItems={items}
                     onClearRecentlyViewed={() => setRecentlyViewed([])}
+                    twentyFourHourPrices={twentyFourHourPrices}
+                    isMoversLoading={isMoversLoading}
                 />;
       case 'movers':
         return <TopMoversPage 
@@ -711,7 +713,7 @@ export default function App() {
                />
       case 'stats':
         if (!profile?.developer) {
-          switchView('search'); // Redirect non-devs
+          switchView('home'); // Redirect non-devs
           return null;
         }
         return <StatsPage />;
@@ -749,9 +751,9 @@ export default function App() {
             <h1 className="text-2xl font-bold text-white tracking-tighter">GE Pulse</h1>
           </div>
           <nav className="flex-col gap-2 hidden md:flex">
-            <button onClick={() => switchView('search')} className={getNavButtonClasses('search')}>
-              <SearchIcon className="w-5 h-5" />
-              <span className="font-medium">Search</span>
+            <button onClick={() => switchView('home')} className={getNavButtonClasses('home')}>
+              <HomeIcon className="w-5 h-5" />
+              <span className="font-medium">Home</span>
             </button>
             <button onClick={() => switchView('movers')} className={getNavButtonClasses('movers')}>
               <TrendingUpIcon className="w-5 h-5" />
@@ -870,9 +872,9 @@ export default function App() {
 
       {/* --- MOBILE BOTTOM NAV --- */}
       <nav className="md:hidden grid grid-cols-5 gap-1 p-2 bg-gray-800/70 backdrop-blur-sm fixed bottom-0 left-0 right-0 z-20 border-t border-gray-700/50">
-        <button onClick={() => switchView('search')} className={getMobileNavButtonClasses('search')}>
-            <SearchIcon className="w-5 h-5" />
-            <span>Search</span>
+        <button onClick={() => switchView('home')} className={getMobileNavButtonClasses('home')}>
+            <HomeIcon className="w-5 h-5" />
+            <span>Home</span>
         </button>
         <button onClick={() => switchView('movers')} className={getMobileNavButtonClasses('movers')}>
             <TrendingUpIcon className="w-5 h-5" />

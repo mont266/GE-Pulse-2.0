@@ -9,10 +9,12 @@
 export const getHighResImageUrl = (itemName: string): string => {
   if (!itemName) return '';
 
-  // Step 0: Trim whitespace and standardize names to ensure a space before parentheses.
-  const standardizedName = itemName.trim().replace(/(?<! )\(/g, ' (');
+  // The previous logic to standardize parenthesis spacing was incorrect, as it would
+  // turn "Black dagger(p++)" into "Black_dagger_(p++).png" instead of the correct
+  // "Black_dagger(p++).png". The wiki is consistent with the raw item name.
+  const standardizedName = itemName.trim();
 
-  // Step 1: Create the base filename, replacing spaces and encoding special characters for the URL.
+  // Create the base filename, replacing spaces and encoding special characters for the URL.
   let baseFileName = standardizedName.replace(/ /g, '_');
   baseFileName = baseFileName.charAt(0).toUpperCase() + baseFileName.slice(1);
   baseFileName = baseFileName

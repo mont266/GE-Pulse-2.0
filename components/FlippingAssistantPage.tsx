@@ -75,7 +75,7 @@ const CollapsibleAnalysis: React.FC<{ justification: string }> = ({ justificatio
         <>
             <p className="text-sm text-gray-300 whitespace-pre-wrap">{firstPart}</p>
             {collapsibleParts.map((part, index) => (
-                <details key={index} className="mt-3 group" open>
+                <details key={index} className="mt-3 group">
                     <summary className="flex items-center gap-2 font-semibold text-gray-300 cursor-pointer hover:text-white transition-colors list-none">
                         <ChevronRightIcon className="w-4 h-4 transition-transform duration-200 group-open:rotate-90 flex-shrink-0" />
                         <span>{part.title}</span>

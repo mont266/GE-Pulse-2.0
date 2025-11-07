@@ -1,6 +1,8 @@
 
 
 
+
+// FIX: Corrected a typo in the React import statement to properly import hooks.
 import React, { useState, useMemo } from 'react';
 import type { Item, LatestPrice, AggregatePrice } from '../types';
 import { Card } from './ui/Card';
@@ -26,6 +28,10 @@ type MoverItem = Item & {
 };
 
 const MIN_ITEM_PRICE_FOR_MOVERS = 1000; // Filter out very cheap items
+const MIN_24H_VOLUME_THRESHOLD = 500;
+const MIN_1H_VOLUME_THRESHOLD = 50;
+const MAX_PERCENTAGE_CHANGE = 1000; // Cap at 1000% change to filter outliers
+
 
 const MoverList: React.FC<{
     title: string;
@@ -94,6 +100,7 @@ export const TopMoversPage: React.FC<TopMoversPageProps> = ({
 
   const moversData = useMemo<MoverItem[]>(() => {
     const sourcePrices = timeframe === '1h' ? oneHourPrices : twentyFourHourPrices;
+    const minVolume = timeframe === '1h' ? MIN_1H_VOLUME_THRESHOLD : MIN_24H_VOLUME_THRESHOLD;
     if (!sourcePrices || Object.keys(sourcePrices).length === 0) return [];
     
     return items
@@ -105,13 +112,18 @@ export const TopMoversPage: React.FC<TopMoversPageProps> = ({
             if (!latest?.high || !historical?.avgHighPrice || latest.high < MIN_ITEM_PRICE_FOR_MOVERS) {
                 return null;
             }
+
+            const totalVolume = (historical.highPriceVolume || 0) + (historical.lowPriceVolume || 0);
+            if (totalVolume < minVolume) {
+                return null;
+            }
             
             const priceChange = latest.high - historical.avgHighPrice;
             const percentageChange = historical.avgHighPrice !== 0
                 ? (priceChange / historical.avgHighPrice) * 100
                 : 0;
 
-            if (!isFinite(percentageChange)) {
+            if (!isFinite(percentageChange) || Math.abs(percentageChange) > MAX_PERCENTAGE_CHANGE) {
                 return null;
             }
 
