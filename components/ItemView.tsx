@@ -36,10 +36,10 @@ interface ItemViewProps {
   twentyFourHourPrices: Record<string, AggregatePrice>;
 }
 
-type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y';
+type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y' | 'ALL';
 type ApiTimeStep = '5m' | '1h' | '6h';
 
-const timeViewOptions: TimeView[] = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y'];
+const timeViewOptions: TimeView[] = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y', 'ALL'];
 const AUTO_REFRESH_SECONDS = 30;
 
 // Custom hook to animate a number value smoothly.
@@ -250,11 +250,15 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   const timeViewToApiTimeStep = (timeView: TimeView): ApiTimeStep => {
     if (['1H', '6H', '1D'].includes(timeView)) return '5m';
     if (timeView === '1W') return '1h';
-    return '6h'; // for 1M, 6M, 1Y
+    return '6h'; // for 1M, 6M, 1Y, and ALL
   };
 
   const filteredTimeseriesData = useMemo(() => {
     if (!timeseriesData || timeseriesData.length === 0) return [];
+
+    if (activeTimeView === 'ALL') {
+      return timeseriesData;
+    }
     
     const nowInSeconds = Date.now() / 1000;
     let startTimeSeconds: number;
@@ -469,7 +473,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   const isPendingAdd = pendingWatchlistAdds.has(item.id);
 
   return (
-    <div>
+    <div className="pt-4 md:pt-8">
       {notification && (
         <div className={`fixed top-5 right-5 ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
           {notification.message}
@@ -561,7 +565,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                         variant="secondary"
                         size="sm"
                         onClick={() => setIsDropdownOpen(prev => !prev)}
-                        className="flex items-center gap-2 w-20 justify-center"
+                        className="flex items-center gap-2 min-w-20 justify-center"
                     >
                         <span>{activeTimeView}</span>
                         <ChevronDownIcon className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
