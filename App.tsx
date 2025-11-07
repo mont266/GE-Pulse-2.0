@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -13,7 +14,7 @@ import { AuthModal } from './components/AuthModal';
 import { ProfileModal } from './components/ProfileModal';
 import { ProfilePage } from './components/ProfilePage';
 import { PortfolioPage } from './components/PortfolioPage';
-import { TopMoversPage } from './components/TopMoversPage';
+import { MarketActivityPage } from './components/TopMoversPage';
 import { CommunityPage } from './components/CommunityPage';
 import { AddInvestmentModal } from './components/AddInvestmentModal';
 import { StatsPage } from './components/StatsPage';
@@ -26,7 +27,7 @@ import { TooltipWrapper } from './components/ui/Tooltip';
 import { ProgressionNotifications } from './components/ProgressionNotifications';
 
 
-type View = 'home' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'movers' | 'community' | 'stats' | 'assistant';
+type View = 'home' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'market' | 'community' | 'stats' | 'assistant';
 type ProfileWithEmail = Profile & { email: string | null };
 type ViewedProfileData = { profile: Profile; profit: number };
 
@@ -215,7 +216,7 @@ export default function App() {
   // --- Fetch Top Movers Data ---
   useEffect(() => {
       const loadMoversData = async () => {
-          if ((currentView === 'home' || currentView === 'movers' || currentView === 'assistant') && (Object.keys(oneHourPrices).length === 0 || Object.keys(twentyFourHourPrices).length === 0)) {
+          if ((currentView === 'home' || currentView === 'market' || currentView === 'assistant' || currentView === 'item') && (Object.keys(oneHourPrices).length === 0 || Object.keys(twentyFourHourPrices).length === 0)) {
               setIsMoversLoading(true);
               setError(null);
               try {
@@ -579,6 +580,15 @@ export default function App() {
             <p className="font-semibold text-white truncate">{profile.username}</p>
             <p className="text-sm text-gray-400">Level {profile.level}</p>
           </div>
+          <div className="px-4 py-2 border-b border-gray-700/50">
+            <div className="flex justify-between items-center text-gray-300">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                    <BotIcon className="w-5 h-5 text-emerald-400" />
+                    <span>AI Tokens</span>
+                </div>
+                <span className="font-semibold text-base text-white bg-gray-700/60 px-2.5 py-1 rounded-md">{profile.tokens}</span>
+            </div>
+          </div>
           <div className="py-1">
             <button onClick={showProfilePage} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
               <UserSquareIcon className="w-5 h-5" />
@@ -613,7 +623,7 @@ export default function App() {
     if (isLoading && !initialRoutingDone.current) {
       return <div className="flex justify-center items-center h-full pt-20"><Loader /></div>;
     }
-    if (error && !['item', 'movers'].includes(currentView)) {
+    if (error && !['item', 'market'].includes(currentView)) {
       return <div className="text-center text-red-400 mt-8">{error}</div>;
     }
     
@@ -634,6 +644,10 @@ export default function App() {
             setAlerts={setAlerts}
             onOpenAddInvestmentModal={handleOpenAddInvestmentModal}
             onSetAlertActivity={handleSetAlertActivity}
+            profile={profile}
+            onSpendToken={handleSpendToken}
+            oneHourPrices={oneHourPrices}
+            twentyFourHourPrices={twentyFourHourPrices}
           />
         );
       case 'home':
@@ -647,8 +661,8 @@ export default function App() {
                     twentyFourHourPrices={twentyFourHourPrices}
                     isMoversLoading={isMoversLoading}
                 />;
-      case 'movers':
-        return <TopMoversPage 
+      case 'market':
+        return <MarketActivityPage 
                  items={Object.values(items)}
                  latestPrices={latestPrices}
                  oneHourPrices={oneHourPrices}
@@ -755,9 +769,9 @@ export default function App() {
               <HomeIcon className="w-5 h-5" />
               <span className="font-medium">Home</span>
             </button>
-            <button onClick={() => switchView('movers')} className={getNavButtonClasses('movers')}>
+            <button onClick={() => switchView('market')} className={getNavButtonClasses('market')}>
               <TrendingUpIcon className="w-5 h-5" />
-              <span className="font-medium">Top Movers</span>
+              <span className="font-medium">Market Activity</span>
             </button>
              <TooltipWrapper text="Login to use the AI Assistant" show={!session}>
               <button onClick={() => switchView('assistant')} disabled={!session} className={getNavButtonClasses('assistant', !session)}>
@@ -795,47 +809,60 @@ export default function App() {
             )}
           </nav>
           
-          <div className="mt-auto pt-4 border-t border-gray-700/50 relative hidden md:block" data-profile-menu-container>
-            {session && profile ? (
-              <>
-                {isProfileMenuOpen && (
-                  <div className="absolute bottom-full mb-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1">
-                     <button onClick={showProfilePage} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
-                      <UserSquareIcon className="w-5 h-5" />
-                      <span>My Profile</span>
-                    </button>
-                    <button onClick={() => { setIsProfileModalOpen(true); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
-                      <SettingsIcon className="w-5 h-5" />
-                      <span>Profile Settings</span>
-                    </button>
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:bg-gray-700/50 rounded-md">
-                      <LogOutIcon className="w-5 h-5" />
-                      <span>Logout</span>
-                    </button>
+          <div className="mt-auto hidden md:block">
+            {session && profile && (
+              <div className="px-4 pb-4">
+                  <div className="flex justify-between items-center text-gray-300">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                          <BotIcon className="w-5 h-5 text-emerald-400" />
+                          <span>AI Tokens</span>
+                      </div>
+                      <span className="font-semibold text-base text-white bg-gray-700/60 px-2.5 py-1 rounded-md">{profile.tokens}</span>
                   </div>
-                )}
-                <button
-                  onClick={() => setIsProfileMenuOpen(prev => !prev)}
-                  className="w-full flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-700/50"
-                  disabled={isProfileModalOpen}
-                >
-                  <UserIcon className="w-8 h-8 p-1.5 bg-emerald-500/20 text-emerald-300 rounded-full"/>
-                  <div className="flex-1 text-left min-w-0">
-                    <p className="font-medium text-sm truncate text-white">{profile.username || profile.email}</p>
-                    <p className="text-xs text-gray-400">Level {profile.level}</p>
-                  </div>
-                </button>
-              </>
-            ) : !session ? (
-                <Button onClick={() => setIsAuthModalOpen(true)} variant="secondary" className="w-full justify-center">
-                   <LogInIcon className="w-5 h-5 md:mr-2" />
-                  <span>Login / Sign Up</span>
-                </Button>
-            ) : (
-                <div className="flex items-center justify-center h-10">
-                    <Loader size="sm" />
-                </div>
+              </div>
             )}
+            <div className="pt-4 border-t border-gray-700/50 relative" data-profile-menu-container>
+              {session && profile ? (
+                <>
+                  {isProfileMenuOpen && (
+                    <div className="absolute bottom-full mb-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-lg py-1">
+                      <button onClick={showProfilePage} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
+                        <UserSquareIcon className="w-5 h-5" />
+                        <span>My Profile</span>
+                      </button>
+                      <button onClick={() => { setIsProfileModalOpen(true); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
+                        <SettingsIcon className="w-5 h-5" />
+                        <span>Profile Settings</span>
+                      </button>
+                      <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-400 hover:bg-gray-700/50 rounded-md">
+                        <LogOutIcon className="w-5 h-5" />
+                        <span>Logout</span>
+                      </button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setIsProfileMenuOpen(prev => !prev)}
+                    className="w-full flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-700/50"
+                    disabled={isProfileModalOpen}
+                  >
+                    <UserIcon className="w-8 h-8 p-1.5 bg-emerald-500/20 text-emerald-300 rounded-full"/>
+                    <div className="flex-1 text-left min-w-0">
+                      <p className="font-medium text-sm truncate text-white">{profile.username || profile.email}</p>
+                      <p className="text-xs text-gray-400">Level {profile.level}</p>
+                    </div>
+                  </button>
+                </>
+              ) : !session ? (
+                  <Button onClick={() => setIsAuthModalOpen(true)} variant="secondary" className="w-full justify-center">
+                    <LogInIcon className="w-5 h-5 md:mr-2" />
+                    <span>Login / Sign Up</span>
+                  </Button>
+              ) : (
+                  <div className="flex items-center justify-center h-10">
+                      <Loader size="sm" />
+                  </div>
+              )}
+            </div>
           </div>
         </header>
         
@@ -876,9 +903,9 @@ export default function App() {
             <HomeIcon className="w-5 h-5" />
             <span>Home</span>
         </button>
-        <button onClick={() => switchView('movers')} className={getMobileNavButtonClasses('movers')}>
+        <button onClick={() => switchView('market')} className={getMobileNavButtonClasses('market')}>
             <TrendingUpIcon className="w-5 h-5" />
-            <span>Movers</span>
+            <span>Market</span>
         </button>
          <button onClick={() => session ? switchView('assistant') : setIsAuthModalOpen(true)} className={getMobileNavButtonClasses('assistant', !session)}>
             <BotIcon className="w-5 h-5" />

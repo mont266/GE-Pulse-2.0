@@ -28,7 +28,7 @@ export const getHighResImageUrl = (itemName: string): string => {
   // A list of item types that typically use stack images (_5.png) on the wiki.
   const stackableSuffixes = [
     ' bolt tips', ' bolts', ' bolt rack', ' dart', ' darts', ' arrow', ' arrows', 
-    ' shaft', ' shafts', ' seed', ' seeds'
+    ' shaft', ' shafts', ' seed', ' seeds', ' ether', ' essence', ' scales'
   ];
   
   // Extract the base name before any parenthesis for checking.

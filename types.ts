@@ -143,3 +143,10 @@ export interface HistoricAnalysis {
         ignoreLowLimits: boolean;
     };
 }
+
+export interface ItemAnalysis {
+    suggestion: 'Buy Now' | 'Watch' | 'Avoid' | 'Potential Quick Flip';
+    confidence: 'High' | 'Medium' | 'Low';
+    risk: 'High' | 'Medium' | 'Low';
+    analysisText: string;
+}

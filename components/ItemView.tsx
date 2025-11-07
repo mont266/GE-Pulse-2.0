@@ -1,13 +1,14 @@
-
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import type { Item, TimeseriesData, LatestPrice, PriceAlert } from '../types';
+import { GoogleGenAI, Type } from '@google/genai';
+import type { Item, TimeseriesData, LatestPrice, PriceAlert, Profile, AggregatePrice, ItemAnalysis } from '../types';
 import { PriceChart } from './PriceChart';
 import { VolumeChart } from './VolumeChart';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
-import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon } from './icons/Icons';
+import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl } from '../utils/image';
+import { TooltipWrapper } from './ui/Tooltip';
 
 interface ItemViewProps {
   item: Item;
@@ -22,6 +23,10 @@ interface ItemViewProps {
   setAlerts: React.Dispatch<React.SetStateAction<PriceAlert[]>>;
   onOpenAddInvestmentModal: (item: Item) => void;
   onSetAlertActivity: () => void;
+  profile: (Profile & { email: string | null; }) | null;
+  onSpendToken: () => Promise<void>;
+  oneHourPrices: Record<string, AggregatePrice>;
+  twentyFourHourPrices: Record<string, AggregatePrice>;
 }
 
 type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y';
@@ -29,13 +34,33 @@ type ApiTimeStep = '5m' | '1h' | '6h';
 
 const timeViewOptions: TimeView[] = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y'];
 
-export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, watchlist, toggleWatchlist, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity }) => {
+const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue' }> = ({ text, color }) => {
+    const colors = {
+        green: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+        yellow: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+        red: 'bg-red-500/20 text-red-300 border-red-500/30',
+        blue: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+    };
+    return (
+        <div className={`text-xs font-bold px-2 py-0.5 rounded-full border ${colors[color]}`}>
+            {text}
+        </div>
+    )
+};
+
+
+export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, watchlist, toggleWatchlist, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices }) => {
   const [activeTimeView, setActiveTimeView] = useState<TimeView>('1W');
   const [notification, setNotification] = useState<string | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
   const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // AI Analysis State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<ItemAnalysis | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Effect for countdown timer tick
   useEffect(() => {
@@ -191,6 +216,75 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
       }
       return newState;
     });
+  };
+
+  const handleGetAiAnalysis = async () => {
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+    setAiError(null);
+
+    try {
+        await onSpendToken();
+
+        const price1h = oneHourPrices[item.id];
+        const price24h = twentyFourHourPrices[item.id];
+
+        const contextData = {
+            name: item.name,
+            limit: item.limit,
+            currentBuyPrice: latestPrice.high,
+            currentSellPrice: latestPrice.low,
+            priceChange1h: price1h?.avgHighPrice ? (((latestPrice.high ?? 0) - price1h.avgHighPrice) / price1h.avgHighPrice * 100).toFixed(2) + '%' : 'N/A',
+            volume1h: (price1h?.highPriceVolume ?? 0) + (price1h?.lowPriceVolume ?? 0),
+            priceChange24h: price24h?.avgHighPrice ? (((latestPrice.high ?? 0) - price24h.avgHighPrice) / price24h.avgHighPrice * 100).toFixed(2) + '%' : 'N/A',
+            volume24h: (price24h?.highPriceVolume ?? 0) + (price24h?.lowPriceVolume ?? 0),
+            priceFluctuationVsPeriodStart: priceFluctuation ? `${priceFluctuation.percent.toFixed(2)}% over ${activeTimeView}` : 'N/A',
+        };
+
+        const prompt = `You are an expert market analyst for the video game Old School RuneScape, specializing in the Grand Exchange. Analyze the provided market data for the item "${item.name}" and provide a concise, expert opinion for a player considering trading this item.
+        
+        Market Data: ${JSON.stringify(contextData, null, 2)}
+
+        Your task is to:
+        1.  Evaluate the item's short-term price trend, volume, and volatility.
+        2.  Provide a clear 'suggestion': 'Buy Now' (strong upward trend, good volume), 'Watch' (uncertain trend, needs more data), 'Avoid' (downward trend, low volume, high risk), or 'Potential Quick Flip' (high volume, small but consistent margin).
+        3.  Assign a 'confidence' level (High, Medium, Low) to your suggestion.
+        4.  Assign a 'risk' level (High, Medium, Low). High volume and stability is Low risk. Low volume and high volatility is High risk.
+        5.  Write a brief 'analysisText' (2-4 sentences) explaining your reasoning. Reference the data, such as volume and recent price changes, to justify your conclusion.
+
+        Return the entire response as a single JSON object.`;
+
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+
+        const responseSchema = {
+            type: Type.OBJECT,
+            properties: {
+                suggestion: { type: Type.STRING, enum: ['Buy Now', 'Watch', 'Avoid', 'Potential Quick Flip'] },
+                confidence: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
+                risk: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
+                analysisText: { type: Type.STRING },
+            },
+            required: ["suggestion", "confidence", "risk", "analysisText"],
+        };
+        
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema,
+            },
+        });
+        
+        const result = JSON.parse(response.text.trim()) as ItemAnalysis;
+        setAnalysisResult(result);
+
+    } catch (err: any) {
+        console.error("AI Analysis Error:", err);
+        setAiError(err.message || 'An error occurred during analysis.');
+    } finally {
+        setIsAnalyzing(false);
+    }
   };
   
   const formatCountdown = (seconds: number) => {
@@ -350,6 +444,40 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
               )}
             </div>
           </Card>
+           {(isAnalyzing || analysisResult || aiError) && (
+                <Card className="mt-6">
+                    <div className="flex items-center gap-3 mb-4">
+                        <BotIcon className="w-6 h-6 text-emerald-400" />
+                        <h3 className="text-xl font-bold text-white">AI Market Analysis</h3>
+                    </div>
+                    {isAnalyzing && (
+                         <div className="flex flex-col items-center justify-center text-center p-8">
+                             <Loader />
+                             <p className="text-gray-300 mt-4">Analyzing market data for {item.name}...</p>
+                         </div>
+                    )}
+                    {aiError && <p className="text-red-400 bg-red-500/10 p-3 rounded-md">{aiError}</p>}
+                    {analysisResult && (
+                        <div>
+                            <div className="flex flex-wrap items-center gap-4 mb-4 pb-4 border-b border-gray-700/50">
+                                <div>
+                                    <p className="text-sm text-gray-400">Suggestion</p>
+                                    <Tag text={analysisResult.suggestion} color={analysisResult.suggestion === 'Buy Now' || analysisResult.suggestion === 'Potential Quick Flip' ? 'green' : analysisResult.suggestion === 'Watch' ? 'yellow' : 'red'} />
+                                </div>
+                                <div>
+                                    <p className="text-sm text-gray-400">Confidence</p>
+                                    <Tag text={analysisResult.confidence} color={analysisResult.confidence === 'High' ? 'green' : analysisResult.confidence === 'Medium' ? 'yellow' : 'red'} />
+                                </div>
+                                 <div>
+                                    <p className="text-sm text-gray-400">Risk</p>
+                                    <Tag text={analysisResult.risk} color={analysisResult.risk === 'High' ? 'red' : analysisResult.risk === 'Medium' ? 'yellow' : 'green'} />
+                                </div>
+                            </div>
+                            <p className="text-gray-300 whitespace-pre-wrap">{analysisResult.analysisText}</p>
+                        </div>
+                    )}
+                </Card>
+            )}
         </div>
         
         <div className="lg:col-span-1">
@@ -363,6 +491,29 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                 <p><strong className="text-gray-400">Members:</strong> {item.members ? 'Yes' : 'No'}</p>
             </div>
           </Card>
+           <div className="mt-6">
+                <Button
+                    onClick={handleGetAiAnalysis}
+                    variant="secondary"
+                    className="w-full justify-center !py-3"
+                    disabled={!profile || profile.tokens <= 0 || isAnalyzing}
+                >
+                    {isAnalyzing ? (
+                        <Loader size="sm" />
+                    ) : (
+                        <>
+                            <BotIcon className="w-5 h-5 mr-2" />
+                            <span>AI Assistant (1 Token)</span>
+                        </>
+                    )}
+                </Button>
+                 {profile && profile.tokens <= 0 && !isAnalyzing && (
+                    <p className="text-xs text-center text-yellow-400 mt-2">You're out of tokens! More are awarded for activity.</p>
+                )}
+                {!profile && (
+                    <p className="text-xs text-center text-gray-400 mt-2">Login to use the AI Assistant.</p>
+                )}
+            </div>
         </div>
       </div>
     </div>
