@@ -1,6 +1,7 @@
 
 
 
+
 import { supabase, Json } from './supabase';
 import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats, Post, FlipData, Comment } from '../types';
 
@@ -624,4 +625,26 @@ export const fetchCommentsForPost = async (postId: string): Promise<Comment[]> =
     }
     // FIX: Cast the return type to 'Comment[]' because the schema update resolves the type mismatch for 'profiles'.
     return (data as unknown as Comment[]) || [];
+};
+
+/**
+ * Deletes a post from the database.
+ * RLS policies should ensure only the owner or an admin can perform this action.
+ * @param postId The ID of the post to delete.
+ */
+export const deletePost = async (postId: string): Promise<void> => {
+    const { error, count } = await supabase
+        .from('posts')
+        .delete({ count: 'exact' })
+        .eq('id', postId);
+
+    if (error) {
+        console.error('Error deleting post:', error);
+        throw error;
+    }
+
+    if (count === 0) {
+        // This can happen if the post was already deleted, or if RLS prevents the action.
+        throw new Error('Post not found or you do not have permission to delete it.');
+    }
 };

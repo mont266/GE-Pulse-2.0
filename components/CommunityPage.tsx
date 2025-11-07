@@ -3,10 +3,11 @@ import type { Session } from '@supabase/supabase-js';
 import { Card } from './ui/Card';
 import { Loader } from './ui/Loader';
 import { Button } from './ui/Button';
-import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon } from './icons/Icons';
-import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment } from '../services/database';
+import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon } from './icons/Icons';
+import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost } from '../services/database';
 import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData } from '../types';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
+import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface CommunityPageProps {
     onViewProfile: (user: LeaderboardEntry | { username: string | null }) => void;
@@ -120,6 +121,7 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
     const [posts, setPosts] = useState<Post[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
 
     const fetchAndSetPosts = useCallback(async () => {
         try {
@@ -139,11 +141,36 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
 
     const handlePostCreated = (newPost: Post) => {
         setPosts(prevPosts => [newPost, ...prevPosts]);
+        setIsCreatePostOpen(false);
+    };
+
+    const handlePostDeleted = (postId: string) => {
+        setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
     };
 
     return (
         <div className="space-y-6">
-            {session && profile && <CreatePostForm profile={profile} session={session} onPostCreated={handlePostCreated} />}
+            {session && profile && (
+                isCreatePostOpen ? (
+                    <CreatePostForm 
+                        profile={profile} 
+                        session={session} 
+                        onPostCreated={handlePostCreated}
+                        onCancel={() => setIsCreatePostOpen(false)}
+                    />
+                ) : (
+                    <Card 
+                        isHoverable 
+                        onClick={() => setIsCreatePostOpen(true)} 
+                        className="p-4"
+                    >
+                        <div className="flex items-center gap-3">
+                            <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0"/>
+                            <div className="text-gray-500">Create a post...</div>
+                        </div>
+                    </Card>
+                )
+            )}
             
             {isLoading && <div className="flex justify-center items-center h-64"><Loader /></div>}
             {error && <div className="text-center text-red-400 mt-8">{error}</div>}
@@ -154,14 +181,14 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
             )}
             <div className="space-y-6">
                 {posts.map(post => (
-                    <PostCard key={post.id} post={post} items={items} onSelectItem={onSelectItem} profile={profile} session={session} onViewProfile={onViewProfile} />
+                    <PostCard key={post.id} post={post} items={items} onSelectItem={onSelectItem} profile={profile} session={session} onViewProfile={onViewProfile} onPostDeleted={handlePostDeleted} />
                 ))}
             </div>
         </div>
     );
 };
 
-const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreated: (post: Post) => void; }> = ({ profile, session, onPostCreated }) => {
+const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreated: (post: Post) => void; onCancel: () => void; }> = ({ profile, session, onPostCreated, onCancel }) => {
     const [title, setTitle] = useState('');
     const [content, setContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -195,8 +222,9 @@ const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreat
                 </div>
                 <textarea value={content} onChange={e => setContent(e.target.value)} placeholder={`What's on your mind, ${profile.username}?`}
                     className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition min-h-[80px]" required />
-                <div className="flex justify-end items-center mt-3">
-                    {error && <p className="text-red-400 text-sm mr-4">{error}</p>}
+                <div className="flex justify-end items-center mt-3 gap-2">
+                    {error && <p className="text-red-400 text-sm mr-auto">{error}</p>}
+                    <Button type="button" variant="ghost" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>
                     <Button type="submit" disabled={isSubmitting || !content.trim()}>
                         {isSubmitting ? <Loader size="sm" /> : 'Post'}
                     </Button>
@@ -206,11 +234,16 @@ const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreat
     );
 };
 
-const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile }) => {
+const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onPostDeleted: (postId: string) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile, onPostDeleted }) => {
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
     const [comments, setComments] = useState<Comment[]>([]);
     const [isCommentsLoading, setIsCommentsLoading] = useState(false);
     const [commentCount, setCommentCount] = useState(post.comment_count);
+    const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState<string | null>(null);
+
+    const canDelete = profile && (profile.id === post.user_id || profile.developer);
     
     const handleToggleComments = async () => {
         const currentlyOpen = isCommentsOpen;
@@ -233,43 +266,81 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
         setCommentCount(prev => prev + 1);
     }
     
+    const handleConfirmDelete = async () => {
+        setIsDeleting(true);
+        setDeleteError(null);
+        try {
+            await deletePost(post.id);
+            onPostDeleted(post.id);
+            setIsDeleteConfirmOpen(false);
+        } catch (err: any) {
+            setDeleteError(err.message || "Failed to delete post.");
+        } finally {
+            setIsDeleting(false);
+        }
+    };
+
     const item = post.flip_data ? items[post.flip_data.item_id] : null;
 
     return (
-        <Card className="p-5">
-            <div className="flex items-start gap-4">
-                <UserIcon className="w-10 h-10 p-2 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
-                <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                        <button onClick={() => onViewProfile({ username: post.profiles.username })} className="font-bold text-white hover:underline">{post.profiles.username || 'Anonymous'}</button>
-                        {post.profiles.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
-                        <span className="text-gray-400 text-sm">· {timeAgo(post.created_at)}</span>
-                    </div>
-                    <div className="text-gray-300 mt-2 space-y-3">
-                        {post.title && <h3 className="text-lg font-semibold text-white">{post.title}</h3>}
-                        {post.content && <p className="whitespace-pre-wrap">{post.content}</p>}
-                        {post.flip_data && item && <FlipPost flip={post.flip_data} item={item} onSelectItem={onSelectItem} />}
-                    </div>
-                </div>
-            </div>
-             <div className="flex items-center gap-4 mt-4 pl-14">
-                <button onClick={handleToggleComments} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">
-                    <MessageSquareIcon className="w-5 h-5" />
-                    <span>{commentCount} Comment{commentCount !== 1 && 's'}</span>
-                </button>
-            </div>
-            {isCommentsOpen && (
-                 <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4">
-                    {isCommentsLoading ? <div className="flex justify-center p-4"><Loader /></div> :
-                     comments.length > 0 ? (
-                        <div className="space-y-4">
-                            {comments.map(c => <CommentCard key={c.id} comment={c} onViewProfile={onViewProfile} />)}
-                        </div>
-                    ) : <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>}
-                     {session && profile && <CreateCommentForm postId={post.id} session={session} onCommentAdded={handleCommentAdded} />}
-                </div>
+        <>
+            {isDeleteConfirmOpen && (
+                <DeleteConfirmationModal
+                    title="Delete Post"
+                    message={<>Are you sure you want to permanently delete this post? This action cannot be undone.</>}
+                    onClose={() => setIsDeleteConfirmOpen(false)}
+                    onConfirm={handleConfirmDelete}
+                    isLoading={isDeleting}
+                    error={deleteError}
+                />
             )}
-        </Card>
+            <Card className="p-5">
+                <div className="flex items-start gap-4">
+                    <UserIcon className="w-10 h-10 p-2 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+                    <div className="flex-1">
+                         <div className="flex justify-between items-start gap-4">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <button onClick={() => onViewProfile({ username: post.profiles.username })} className="font-bold text-white hover:underline">{post.profiles.username || 'Anonymous'}</button>
+                                {post.profiles.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
+                                <span className="text-gray-400 text-sm">· {timeAgo(post.created_at)}</span>
+                            </div>
+                            {canDelete && (
+                                <button 
+                                    onClick={() => { setDeleteError(null); setIsDeleteConfirmOpen(true); }} 
+                                    className="p-1 -m-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0" 
+                                    aria-label="Delete post"
+                                    title="Delete post"
+                                >
+                                    <Trash2Icon className="w-4 h-4" />
+                                </button>
+                            )}
+                        </div>
+                        <div className="text-gray-300 mt-2 space-y-3">
+                            {post.title && <h3 className="text-lg font-semibold text-white">{post.title}</h3>}
+                            {post.content && <p className="whitespace-pre-wrap">{post.content}</p>}
+                            {post.flip_data && item && <FlipPost flip={post.flip_data} item={item} onSelectItem={onSelectItem} />}
+                        </div>
+                    </div>
+                </div>
+                 <div className="flex items-center gap-4 mt-4 pl-14">
+                    <button onClick={handleToggleComments} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">
+                        <MessageSquareIcon className="w-5 h-5" />
+                        <span>{commentCount} Comment{commentCount !== 1 && 's'}</span>
+                    </button>
+                </div>
+                {isCommentsOpen && (
+                     <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4">
+                        {isCommentsLoading ? <div className="flex justify-center p-4"><Loader /></div> :
+                         comments.length > 0 ? (
+                            <div className="space-y-4">
+                                {comments.map(c => <CommentCard key={c.id} comment={c} onViewProfile={onViewProfile} />)}
+                            </div>
+                        ) : <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>}
+                         {session && profile && <CreateCommentForm postId={post.id} session={session} onCommentAdded={handleCommentAdded} />}
+                    </div>
+                )}
+            </Card>
+        </>
     )
 };
 
@@ -329,7 +400,7 @@ const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentA
             <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
             <div className="flex-1">
                  <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Write a comment..." rows={1}
-                    className="w-full bg-gray-700/40 border border-gray-600 rounded-lg p-2 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition resize-none" />
+                    className="w-full bg-gray-700/40 border border-gray-600 rounded-lg p-2 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none resize-none" />
                 <div className="flex justify-end mt-2">
                      <Button size="sm" type="submit" disabled={isSubmitting || !content.trim()}>
                         {isSubmitting ? <Loader size="sm" /> : 'Comment'}

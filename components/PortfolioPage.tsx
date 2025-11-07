@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import type { Investment, Item, LatestPrice, Profile } from '../types';
+import type { Investment, Item, LatestPrice, Profile, FlipData } from '../types';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { BriefcaseIcon, Trash2Icon, EditIcon, RefreshCwIcon, Share2Icon, CheckIcon } from './icons/Icons';
@@ -10,6 +10,7 @@ import { EditInvestmentModal } from './EditInvestmentModal';
 import { Loader } from './ui/Loader';
 import { PortfolioChart } from './PortfolioChart';
 import { createPost } from '../services/database';
+import { ShareFlipModal } from './ShareFlipModal';
 
 interface PortfolioPageProps {
   investments: Investment[];
@@ -107,7 +108,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     const [isRefreshing, setIsRefreshing] = useState(false);
 
     // State for sharing flips
-    const [sharingFlipId, setSharingFlipId] = useState<string | null>(null);
+    const [investmentToShare, setInvestmentToShare] = useState<Investment | null>(null);
     const [sharedFlips, setSharedFlips] = useState<Set<string>>(new Set());
     const [shareNotification, setShareNotification] = useState<string | null>(null);
 
@@ -300,39 +301,26 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
         return { totalValue, unrealisedProfit, realisedProfit, totalTaxPaid };
     }, [openPositions, closedPositions, latestPrices]);
 
-    const handleShareFlip = async (inv: Investment) => {
-        if (!session || !profile?.username) return;
-        setSharingFlipId(inv.id);
+    const handleConfirmShare = async (postData: { title: string | null; content: string | null; flip_data: FlipData }) => {
+        if (!session) throw new Error("User not authenticated");
+        if (!investmentToShare) throw new Error("No investment selected for sharing");
+
+        const investmentIdToShare = investmentToShare.id;
         
         try {
-            const item = items[inv.item_id];
-            const purchaseValue = inv.purchase_price * inv.quantity;
-            const sellValue = inv.sell_price! * inv.quantity;
-            const profit = sellValue - purchaseValue - (inv.tax_paid ?? 0);
-            const roi = purchaseValue > 0 ? (profit / purchaseValue) * 100 : 0;
-
             await createPost(session.user.id, {
-                title: null,
-                content: `Check out my latest flip on the ${item.name}!`,
-                flip_data: {
-                    item_id: item.id,
-                    item_name: item.name,
-                    quantity: inv.quantity,
-                    purchase_price: inv.purchase_price,
-                    sell_price: inv.sell_price!,
-                    profit: profit,
-                    roi: roi,
-                }
+                title: postData.title,
+                content: postData.content,
+                flip_data: postData.flip_data
             });
-
-            setSharedFlips(prev => new Set(prev).add(inv.id));
+            setSharedFlips(prev => new Set(prev).add(investmentIdToShare));
             setShareNotification("Successfully shared flip to the community feed!");
-
         } catch (error) {
             console.error("Failed to share flip", error);
             setShareNotification("Error: Could not share flip.");
+            throw error; // Rethrow for the modal to handle its state
         } finally {
-            setSharingFlipId(null);
+            setInvestmentToShare(null); // Close modal on success
             setTimeout(() => setShareNotification(null), 3000);
         }
     };
@@ -370,6 +358,14 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                     item={items[investmentToEdit.item_id]}
                     onClose={() => setInvestmentToEdit(null)}
                     onSave={onEditInvestment}
+                />
+            )}
+            {investmentToShare && items[investmentToShare.item_id] && (
+                <ShareFlipModal
+                    investment={investmentToShare}
+                    item={items[investmentToShare.item_id]}
+                    onClose={() => setInvestmentToShare(null)}
+                    onShare={handleConfirmShare}
                 />
             )}
             {investmentToDelete && items[investmentToDelete.item_id] && (
@@ -591,14 +587,12 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                                                 className="w-8 h-8 text-gray-500 hover:text-emerald-400"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    handleShareFlip(inv);
+                                                    setInvestmentToShare(inv);
                                                 }}
-                                                disabled={sharedFlips.has(inv.id) || sharingFlipId === inv.id}
-                                                title="Share this flip to the community feed"
+                                                disabled={sharedFlips.has(inv.id)}
+                                                title={sharedFlips.has(inv.id) ? "Already shared" : "Share this flip to the community feed"}
                                             >
-                                                {sharingFlipId === inv.id ? (
-                                                    <Loader size="sm" />
-                                                ) : sharedFlips.has(inv.id) ? (
+                                                {sharedFlips.has(inv.id) ? (
                                                     <CheckIcon className="w-4 h-4 text-emerald-400" />
                                                 ) : (
                                                     <Share2Icon className="w-4 h-4" />
