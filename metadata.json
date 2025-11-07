@@ -1,0 +1,6 @@
+{
+  "name": "New GE Pulse",
+  "description": "GE Pulse is a modern, responsive web application for Old School Runescape players to track item prices from the Grand Exchange. It features real-time price charts, item search, a personalized watchlist, and price alert settings, all wrapped in a sleek, user-friendly interface.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
