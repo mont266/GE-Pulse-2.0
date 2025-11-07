@@ -46,6 +46,7 @@ export interface Profile {
   developer: boolean;
   beta_tester: boolean;
   banned: boolean;
+  premium: boolean;
   // Progression fields
   xp: number;
   level: number;

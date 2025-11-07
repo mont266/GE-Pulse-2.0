@@ -34,23 +34,13 @@ const CompactMoverList: React.FC<{
     onSelectItem: (item: Item) => void;
     isGainers: boolean;
 }> = ({ title, items, onSelectItem, isGainers }) => {
-
-    const ChangeValue: React.FC<{ item: MoverItem }> = ({ item }) => {
-        const value = item.percentageChange;
-        const colorClass = isGainers ? 'text-emerald-400' : 'text-red-400';
-        const sign = isGainers ? '+' : '';
-        const formattedValue = value.toFixed(2);
-        
-        return <span className={`font-bold ${colorClass}`}>{sign}{formattedValue}%</span>;
-    };
-
     return (
         <div>
             <h2 className="text-xl font-bold text-white mb-4">{title}</h2>
             {items.length > 0 ? (
                 <div className="space-y-3">
                     {items.map(item => (
-                        <Card key={item.id} isHoverable={true} onClick={() => onSelectItem(item)} className="p-4">
+                        <Card key={item.id} isHoverable={true} onClick={() => onSelectItem(item)} className={`p-4 shadow-lg ${isGainers ? 'shadow-emerald-500/10 hover:shadow-emerald-500/20' : 'shadow-red-500/10 hover:shadow-red-500/20'}`}>
                              <div className="flex items-center gap-3">
                                 <img
                                     src={getHighResImageUrl(item.name)}
@@ -63,7 +53,12 @@ const CompactMoverList: React.FC<{
                                     <p className="text-xs text-gray-400">{item.currentPrice.toLocaleString()} gp</p>
                                 </div>
                                 <div className="text-right text-sm flex-shrink-0">
-                                    <ChangeValue item={item} />
+                                    <p className={`font-bold ${isGainers ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {isGainers ? '+' : ''}{item.percentageChange.toFixed(2)}%
+                                    </p>
+                                    <p className={`text-xs ${isGainers ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+                                        {isGainers ? '+' : ''}{item.priceChange.toLocaleString()} gp
+                                    </p>
                                 </div>
                             </div>
                         </Card>

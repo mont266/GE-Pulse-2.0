@@ -38,17 +38,6 @@ const MoverList: React.FC<{
     onSelectItem: (item: Item) => void;
     isGainers: boolean;
 }> = ({ title, items, metric, onSelectItem, isGainers }) => {
-    
-    const ChangeValue: React.FC<{ item: MoverItem }> = ({ item }) => {
-        const value = metric === 'price' ? item.priceChange : item.percentageChange;
-        const colorClass = isGainers ? 'text-emerald-400' : 'text-red-400';
-        const sign = isGainers ? '+' : '';
-        const suffix = metric === 'price' ? ' gp' : '%';
-        const formattedValue = metric === 'price' ? value.toLocaleString() : value.toFixed(2);
-        
-        return <span className={`font-bold ${colorClass}`}>{sign}{formattedValue}{suffix}</span>;
-    };
-
     return (
         <div>
             <h2 className="text-2xl font-bold text-white mb-4">{title}</h2>
@@ -68,7 +57,16 @@ const MoverList: React.FC<{
                                     <p className="text-sm text-gray-400">{item.currentPrice.toLocaleString()} gp</p>
                                 </div>
                                 <div className="text-right text-sm">
-                                    <ChangeValue item={item} />
+                                    <p className={`font-bold ${isGainers ? 'text-emerald-400' : 'text-red-400'}`}>
+                                        {metric === 'percentage'
+                                            ? `${isGainers ? '+' : ''}${item.percentageChange.toFixed(2)}%`
+                                            : `${isGainers ? '+' : ''}${item.priceChange.toLocaleString()} gp`}
+                                    </p>
+                                    <p className={`text-xs ${isGainers ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
+                                        {metric === 'percentage'
+                                            ? `${isGainers ? '+' : ''}${item.priceChange.toLocaleString()} gp`
+                                            : `${isGainers ? '+' : ''}${item.percentageChange.toFixed(2)}%`}
+                                    </p>
                                 </div>
                             </div>
                         </Card>

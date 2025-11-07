@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Item, LatestPrice, AggregatePrice, FlippingSuggestion, Profile, HistoricAnalysis } from '../types';
-import { BotIcon, SearchIcon, DollarSignIcon, InfoIcon, ClockIcon, ChevronRightIcon, ZapIcon } from './icons/Icons';
+import { BotIcon, SearchIcon, DollarSignIcon, InfoIcon, ClockIcon, ChevronRightIcon, ZapIcon, ChevronDownIcon } from './icons/Icons';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
 import { Card } from './ui/Card';
@@ -181,6 +181,138 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
                 View Item
             </Button>
         </Card>
+    );
+};
+
+type Currency = {
+  code: string;
+  symbol: string;
+  rate: number; // Rate relative to USD
+};
+
+const currencies: Currency[] = [
+  { code: 'USD', symbol: '$', rate: 1.0 },
+  { code: 'EUR', symbol: '€', rate: 0.93 },
+  { code: 'GBP', symbol: '£', rate: 0.79 },
+  { code: 'AUD', symbol: 'A$', rate: 1.51 },
+  { code: 'CAD', symbol: 'C$', rate: 1.37 },
+];
+
+const TokenPurchaseSection = () => {
+    const [selectedCurrency, setSelectedCurrency] = useState<Currency>(currencies[0]);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const fetchCurrencyForUser = async () => {
+            try {
+                // This free API determines currency from the user's IP address without needing permissions.
+                const response = await fetch('https://ipapi.co/json/');
+                if (!response.ok) {
+                    console.warn('Could not fetch currency from IP API.');
+                    return;
+                }
+                const data = await response.json();
+                const userCurrencyCode = data.currency;
+                
+                const matchedCurrency = currencies.find(c => c.code === userCurrencyCode);
+                
+                if (matchedCurrency) {
+                    setSelectedCurrency(matchedCurrency);
+                }
+            } catch (error) {
+                console.warn('Could not auto-detect currency:', error);
+                // Gracefully fall back to the default (USD).
+            }
+        };
+
+        fetchCurrencyForUser();
+    }, []); // Empty dependency array ensures this runs only once on mount.
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const bundles = [
+        { tokens: 5, basePriceUSD: 0.99, description: 'For a few quick checks.' },
+        { tokens: 10, basePriceUSD: 1.79, description: 'Great for regular traders.' },
+        { tokens: 25, basePriceUSD: 3.99, description: 'Best value for power users.' },
+    ];
+
+    return (
+        <div className="max-w-3xl mx-auto mt-12">
+            <div className="text-center mb-6">
+                <h2 className="text-xl font-bold text-white">Need More Tokens?</h2>
+                <p className="text-gray-400">Top up your balance to continue using the AI Assistant.</p>
+            </div>
+             <div className="flex justify-center mb-6">
+                <div className="relative" ref={dropdownRef}>
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setIsDropdownOpen(prev => !prev)}
+                        className="flex items-center gap-2"
+                        aria-haspopup="true"
+                        aria-expanded={isDropdownOpen}
+                    >
+                        <span>Displaying prices in {selectedCurrency.code}</span>
+                        <ChevronDownIcon className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                    </Button>
+                    {isDropdownOpen && (
+                        <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-48 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1">
+                            {currencies.map(currency => (
+                                <button
+                                    key={currency.code}
+                                    onClick={() => {
+                                        setSelectedCurrency(currency);
+                                        setIsDropdownOpen(false);
+                                    }}
+                                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md ${
+                                        selectedCurrency.code === currency.code
+                                            ? 'bg-emerald-600 text-white'
+                                            : 'text-gray-300 hover:bg-gray-700/50'
+                                    }`}
+                                    role="option"
+                                    aria-selected={selectedCurrency.code === currency.code}
+                                >
+                                    {currency.code} - {currency.symbol}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {bundles.map(bundle => {
+                    const calculatedPrice = (bundle.basePriceUSD * selectedCurrency.rate).toFixed(2);
+                    return (
+                        <Card key={bundle.tokens} className="text-center p-6 flex flex-col justify-between border-gray-700">
+                            <div>
+                                <BotIcon className="w-8 h-8 text-emerald-400 mx-auto mb-3" />
+                                <h3 className="text-2xl font-bold text-white">{bundle.tokens} Tokens</h3>
+                                <p className="text-gray-400 text-sm mt-1 mb-4">{bundle.description}</p>
+                                <p className="text-4xl font-extrabold text-white my-4">
+                                    {selectedCurrency.symbol}{calculatedPrice}
+                                </p>
+                            </div>
+                            <Button
+                                variant="primary"
+                                className="w-full mt-4 cursor-not-allowed bg-gray-600 hover:bg-gray-600 text-gray-300"
+                                disabled
+                            >
+                                Coming Soon
+                            </Button>
+                        </Card>
+                    );
+                })}
+            </div>
+        </div>
     );
 };
 
@@ -583,65 +715,68 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                     </div>
                 </div>
             ) : (
-                <Card className="max-w-2xl mx-auto p-6">
-                    <div className="space-y-4">
-                        <div>
-                            <label htmlFor="budget" className="block text-sm font-medium text-gray-300 mb-1">Flipping Budget</label>
-                            <div className="relative">
-                                <DollarSignIcon className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
-                                <input id="budget" type="text" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g., 25m" className="w-full p-3 pl-10 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-300 mb-1">Flipping Strategy</label>
-                             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                <Button title="Consistent, lower-risk profits from high-volume items." type="button" variant={strategy === 'balanced' ? 'secondary' : 'ghost'} onClick={() => setStrategy('balanced')} className="w-full border border-transparent !py-3" style={strategy === 'balanced' ? {borderColor: '#4b5563'} : {}}>Balanced</Button>
-                                <Button title="Higher-risk, higher-reward plays focusing on the best percentage margins." type="button" variant={strategy === 'high_margin' ? 'secondary' : 'ghost'} onClick={() => setStrategy('high_margin')} className="w-full border border-transparent !py-3" style={strategy === 'high_margin' ? {borderColor: '#4b5563'} : {}}>High Margin</Button>
-                                <Button title="Find popular items that have recently dropped in price." type="button" variant={strategy === 'dip_buys' ? 'secondary' : 'ghost'} onClick={() => setStrategy('dip_buys')} className="w-full border border-transparent !py-3" style={strategy === 'dip_buys' ? {borderColor: '#4b5563'} : {}}>Dip Buys</Button>
-                                <Button title="Find items with strong recent growth in price and volume." type="button" variant={strategy === 'momentum_plays' ? 'secondary' : 'ghost'} onClick={() => setStrategy('momentum_plays')} className="w-full border border-transparent !py-3" style={strategy === 'momentum_plays' ? {borderColor: '#4b5563'} : {}}>Momentum</Button>
-                            </div>
-                        </div>
-                         <div className="flex items-center justify-between pt-4 border-t border-gray-700/50">
-                            <div className="flex items-center gap-2">
-                                <label htmlFor="limit-toggle" className="text-sm font-medium text-gray-300 cursor-pointer select-none">
-                                    Ignore Low Buy Limits
-                                </label>
-                                <div className="relative group">
-                                    <InfoIcon className="w-4 h-4 text-gray-500"/>
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max bg-gray-900 text-white text-xs rounded-lg py-1.5 px-2.5 shadow-lg border border-gray-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                                        Excludes items with a buy limit under {LOW_LIMIT_THRESHOLD.toLocaleString()}.
-                                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 transform rotate-45 border-b border-r border-gray-700"></div>
-                                    </div>
+                <>
+                    <Card className="max-w-2xl mx-auto p-6">
+                        <div className="space-y-4">
+                            <div>
+                                <label htmlFor="budget" className="block text-sm font-medium text-gray-300 mb-1">Flipping Budget</label>
+                                <div className="relative">
+                                    <DollarSignIcon className="w-5 h-5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <input id="budget" type="text" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="e.g., 25m" className="w-full p-3 pl-10 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-emerald-500 focus:outline-none transition" />
                                 </div>
                             </div>
-                            <button
-                                id="limit-toggle"
-                                role="switch"
-                                aria-checked={ignoreLowLimits}
-                                onClick={() => setIgnoreLowLimits(p => !p)}
-                                className={`${
-                                ignoreLowLimits ? 'bg-emerald-600' : 'bg-gray-600'
-                                } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
-                            >
-                                <span
-                                aria-hidden="true"
-                                className={`${
-                                    ignoreLowLimits ? 'translate-x-5' : 'translate-x-0'
-                                } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
-                                />
-                            </button>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-300 mb-1">Flipping Strategy</label>
+                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                    <Button title="Consistent, lower-risk profits from high-volume items." type="button" variant={strategy === 'balanced' ? 'secondary' : 'ghost'} onClick={() => setStrategy('balanced')} className="w-full border border-transparent !py-3" style={strategy === 'balanced' ? {borderColor: '#4b5563'} : {}}>Balanced</Button>
+                                    <Button title="Higher-risk, higher-reward plays focusing on the best percentage margins." type="button" variant={strategy === 'high_margin' ? 'secondary' : 'ghost'} onClick={() => setStrategy('high_margin')} className="w-full border border-transparent !py-3" style={strategy === 'high_margin' ? {borderColor: '#4b5563'} : {}}>High Margin</Button>
+                                    <Button title="Find popular items that have recently dropped in price." type="button" variant={strategy === 'dip_buys' ? 'secondary' : 'ghost'} onClick={() => setStrategy('dip_buys')} className="w-full border border-transparent !py-3" style={strategy === 'dip_buys' ? {borderColor: '#4b5563'} : {}}>Dip Buys</Button>
+                                    <Button title="Find items with strong recent growth in price and volume." type="button" variant={strategy === 'momentum_plays' ? 'secondary' : 'ghost'} onClick={() => setStrategy('momentum_plays')} className="w-full border border-transparent !py-3" style={strategy === 'momentum_plays' ? {borderColor: '#4b5563'} : {}}>Momentum</Button>
+                                </div>
+                            </div>
+                             <div className="flex items-center justify-between pt-4 border-t border-gray-700/50">
+                                <div className="flex items-center gap-2">
+                                    <label htmlFor="limit-toggle" className="text-sm font-medium text-gray-300 cursor-pointer select-none">
+                                        Ignore Low Buy Limits
+                                    </label>
+                                    <div className="relative group">
+                                        <InfoIcon className="w-4 h-4 text-gray-500"/>
+                                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max bg-gray-900 text-white text-xs rounded-lg py-1.5 px-2.5 shadow-lg border border-gray-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                                            Excludes items with a buy limit under {LOW_LIMIT_THRESHOLD.toLocaleString()}.
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 transform rotate-45 border-b border-r border-gray-700"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <button
+                                    id="limit-toggle"
+                                    role="switch"
+                                    aria-checked={ignoreLowLimits}
+                                    onClick={() => setIgnoreLowLimits(p => !p)}
+                                    className={`${
+                                    ignoreLowLimits ? 'bg-emerald-600' : 'bg-gray-600'
+                                    } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
+                                >
+                                    <span
+                                    aria-hidden="true"
+                                    className={`${
+                                        ignoreLowLimits ? 'translate-x-5' : 'translate-x-0'
+                                    } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                                    />
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                     <div className="text-center mt-6">
-                        <Button variant="primary" size="lg" onClick={handleAnalyze} disabled={isAnalyzing || !profile || profile.tokens <= 0} className="w-full">
-                            {`Analyze Market (${profile && profile.tokens > 0 ? '1 Token' : '0 Tokens'})`}
-                        </Button>
-                        {aiError && <p className="text-red-400 mt-4 text-sm bg-red-500/10 p-2 rounded-md">{aiError}</p>}
-                        {profile && profile.tokens <= 0 && !isAnalyzing && (
-                            <p className="text-yellow-400 mt-4 text-sm bg-yellow-500/10 p-3 rounded-md">You're out of tokens! More will be available later.</p>
-                        )}
-                    </div>
-                </Card>
+                         <div className="text-center mt-6">
+                            <Button variant="primary" size="lg" onClick={handleAnalyze} disabled={isAnalyzing || !profile || profile.tokens <= 0} className="w-full">
+                                {`Analyze Market (${profile && profile.tokens > 0 ? '1 Token' : '0 Tokens'})`}
+                            </Button>
+                            {aiError && <p className="text-red-400 mt-4 text-sm bg-red-500/10 p-2 rounded-md">{aiError}</p>}
+                        </div>
+                    </Card>
+
+                    {profile && profile.tokens <= 2 && (
+                        <TokenPurchaseSection />
+                    )}
+                </>
             )}
 
             {!isAnalyzing && history.length > 0 && (

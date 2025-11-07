@@ -72,7 +72,7 @@ export const removeFromWatchlist = async (userId: string, itemId: number) => {
 export const getProfile = async (userId: string): Promise<Profile | null> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, developer, beta_tester, banned, xp, level, login_streak, tokens')
+      .select('id, username, developer, beta_tester, banned, xp, level, login_streak, tokens, premium')
       .eq('id', userId)
       .single();
 
@@ -95,7 +95,7 @@ export const getProfile = async (userId: string): Promise<Profile | null> => {
 export const getProfileByUsername = async (username: string): Promise<Profile | null> => {
     const { data: profileData, error: profileError } = await supabase
       .from('profiles')
-      .select('id, username, developer, beta_tester, banned, xp, level, login_streak, tokens')
+      .select('id, username, developer, beta_tester, banned, xp, level, login_streak, tokens, premium')
       .eq('username', username)
       .single();
 

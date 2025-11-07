@@ -1,7 +1,8 @@
 
+
 import React, { useState } from 'react';
 import type { Profile } from '../types';
-import { UserIcon, ArrowLeftIcon, BriefcaseIcon, CodeIcon, BarChartIcon, ShieldCheckIcon, SlashIcon, ShieldOffIcon, FlameIcon, TrophyIcon } from './icons/Icons';
+import { UserIcon, ArrowLeftIcon, BriefcaseIcon, CodeIcon, BarChartIcon, ShieldCheckIcon, SlashIcon, ShieldOffIcon, FlameIcon, TrophyIcon, StarIcon } from './icons/Icons';
 import { Button } from './ui/Button';
 import { Card } from './ui/Card';
 import { setUserRole, banUser } from '../services/database';
@@ -197,6 +198,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ profile, viewerProfile
           <div className="flex-1">
               <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-4xl font-bold text-white">{profile.username}</h1>
+                  {profile.premium && (
+                      <span className="flex items-center gap-1.5 self-center bg-yellow-400/20 text-yellow-300 border border-yellow-500/50 rounded-full px-3 py-1 text-xs font-bold" title="Premium Member">
+                          <StarIcon className="w-4 h-4" />
+                          <span>Premium</span>
+                      </span>
+                  )}
                   {profile.login_streak > 0 && (
                       <span className="relative group flex items-center gap-1.5 self-center bg-orange-500/20 text-orange-400 border border-orange-500/50 rounded-full px-3 py-1 text-xs font-bold cursor-pointer">
                           <FlameIcon className="w-4 h-4" />

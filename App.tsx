@@ -1,5 +1,7 @@
 
 
+
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -19,6 +21,7 @@ import { CommunityPage } from './components/CommunityPage';
 import { AddInvestmentModal } from './components/AddInvestmentModal';
 import { StatsPage } from './components/StatsPage';
 import { FlippingAssistantPage } from './components/FlippingAssistantPage';
+import { PremiumPage } from './components/PremiumPage';
 import { PulseIcon, HomeIcon, StarIcon, UserIcon, LogOutIcon, SettingsIcon, UserSquareIcon, BellIcon, LogInIcon, BriefcaseIcon, TrendingUpIcon, UsersIcon, BarChartIcon, BotIcon } from './components/icons/Icons';
 import { Loader } from './components/ui/Loader';
 import { Button } from './components/ui/Button';
@@ -27,7 +30,7 @@ import { TooltipWrapper } from './components/ui/Tooltip';
 import { ProgressionNotifications } from './components/ProgressionNotifications';
 
 
-type View = 'home' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'market' | 'community' | 'stats' | 'assistant';
+type View = 'home' | 'watchlist' | 'item' | 'profile' | 'alerts' | 'portfolio' | 'market' | 'community' | 'stats' | 'assistant' | 'premium';
 type ProfileWithEmail = Profile & { email: string | null };
 type ViewedProfileData = { profile: Profile; profit: number };
 
@@ -332,6 +335,7 @@ export default function App() {
         developer: profile.developer,
         beta_tester: profile.beta_tester,
         banned: profile.banned,
+        premium: profile.premium,
         xp: profile.xp,
         level: profile.level,
         login_streak: profile.login_streak,
@@ -577,7 +581,10 @@ export default function App() {
       {isProfileMenuOpen && profile && (
         <div className="absolute top-full right-0 mt-2 w-56 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-30 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-700/50">
-            <p className="font-semibold text-white truncate">{profile.username}</p>
+            <p className="font-semibold text-white truncate flex items-center gap-2">
+              <span>{profile.username}</span>
+              {profile.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
+            </p>
             <p className="text-sm text-gray-400">Level {profile.level}</p>
           </div>
           <div className="px-4 py-2 border-b border-gray-700/50">
@@ -590,6 +597,12 @@ export default function App() {
             </div>
           </div>
           <div className="py-1">
+            {!profile.premium && (
+              <button onClick={() => { switchView('premium'); setIsProfileMenuOpen(false); }} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-yellow-300 hover:bg-gray-700/50 rounded-md">
+                <StarIcon className="w-5 h-5" />
+                <span>Get Premium</span>
+              </button>
+            )}
             <button onClick={showProfilePage} className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700/50 rounded-md">
               <UserSquareIcon className="w-5 h-5" />
               <span>My Profile</span>
@@ -731,6 +744,8 @@ export default function App() {
           return null;
         }
         return <StatsPage />;
+      case 'premium':
+        return <PremiumPage onBack={handleBack} />;
       default:
         return null;
     }
@@ -801,6 +816,12 @@ export default function App() {
                 <span className="font-medium">Alerts</span>
               </button>
             </TooltipWrapper>
+            {profile && !profile.premium && (
+                <button onClick={() => switchView('premium')} className="flex items-center justify-start gap-3 px-4 py-2 rounded-lg transition-colors w-full text-left bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20 mt-2 border border-yellow-500/20">
+                    <StarIcon className="w-5 h-5" />
+                    <span className="font-medium">Get Premium</span>
+                </button>
+            )}
             {profile?.developer && (
                 <button onClick={() => switchView('stats')} className={getNavButtonClasses('stats')}>
                     <BarChartIcon className="w-5 h-5" />
@@ -847,7 +868,10 @@ export default function App() {
                   >
                     <UserIcon className="w-8 h-8 p-1.5 bg-emerald-500/20 text-emerald-300 rounded-full"/>
                     <div className="flex-1 text-left min-w-0">
-                      <p className="font-medium text-sm truncate text-white">{profile.username || profile.email}</p>
+                      <p className="font-medium text-sm truncate text-white flex items-center gap-1.5">
+                        <span>{profile.username || profile.email}</span>
+                        {profile.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
+                      </p>
                       <p className="text-xs text-gray-400">Level {profile.level}</p>
                     </div>
                   </button>
