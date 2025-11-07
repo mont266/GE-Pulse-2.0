@@ -720,6 +720,7 @@ export default function App() {
                     session={session}
                     items={items}
                     onSelectItem={handleItemSelection}
+                    onLoginClick={() => setIsAuthModalOpen(true)}
                 />;
       case 'watchlist':
         return <Watchlist 

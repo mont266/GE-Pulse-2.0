@@ -15,6 +15,7 @@ interface CommunityPageProps {
     session: Session | null;
     items: Record<string, Item>;
     onSelectItem: (item: Item) => void;
+    onLoginClick: () => void;
 }
 
 const MAX_VISIBLE_DEPTH = 3;
@@ -119,7 +120,7 @@ const LeaderboardPanel: React.FC<{ onViewProfile: (user: LeaderboardEntry) => vo
 };
 
 
-const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {onViewProfile: (user: {username: string | null}) => void}> = ({ profile, session, items, onSelectItem, onViewProfile }) => {
+const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {onViewProfile: (user: {username: string | null}) => void}> = ({ profile, session, items, onSelectItem, onViewProfile, onLoginClick }) => {
     const [posts, setPosts] = useState<Post[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -152,6 +153,15 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
 
     return (
         <div className="space-y-6">
+            {!session && (
+                <Card className="p-6 text-center bg-gray-800/60 border border-emerald-500/20 shadow-lg">
+                    <h3 className="text-xl font-bold text-white">Join the Conversation!</h3>
+                    <p className="text-gray-400 mt-2 mb-4">Log in or create an account to post, comment, and share your own successful flips with the community.</p>
+                    <Button onClick={onLoginClick} variant="primary" size="md">
+                        Login / Sign Up
+                    </Button>
+                </Card>
+            )}
             {session && profile && (
                 isCreatePostOpen ? (
                     <CreatePostForm 
@@ -606,7 +616,7 @@ const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentA
 };
 
 
-export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile, profile, session, items, onSelectItem }) => {
+export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile, profile, session, items, onSelectItem, onLoginClick }) => {
     const [activeTab, setActiveTab] = useState<'feed' | 'leaderboard'>('feed');
 
     return (
@@ -624,7 +634,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile, pro
                 </div>
             </div>
             
-            {activeTab === 'feed' ? <CommunityFeedPanel profile={profile} session={session} items={items} onSelectItem={onSelectItem} onViewProfile={onViewProfile} /> : <LeaderboardPanel onViewProfile={onViewProfile} />}
+            {activeTab === 'feed' ? <CommunityFeedPanel profile={profile} session={session} items={items} onSelectItem={onSelectItem} onViewProfile={onViewProfile} onLoginClick={onLoginClick} /> : <LeaderboardPanel onViewProfile={onViewProfile} />}
         </div>
     );
 };
