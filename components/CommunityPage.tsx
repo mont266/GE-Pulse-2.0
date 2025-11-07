@@ -1,16 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Card } from './ui/Card';
 import { Loader } from './ui/Loader';
 import { Button } from './ui/Button';
-import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon, ChevronRightIcon } from './icons/Icons';
-import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost, deleteComment } from '../services/database';
-import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData } from '../types';
+import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon, ChevronRightIcon, SearchIcon, XIcon } from './icons/Icons';
+import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost, deleteComment, searchProfilesByUsername } from '../services/database';
+import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData, SearchedProfile } from '../types';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 
 interface CommunityPageProps {
-    onViewProfile: (user: LeaderboardEntry | { username: string | null }) => void;
+    onViewProfile: (user: LeaderboardEntry | { username: string | null } | string) => void;
     profile: (Profile & { email: string | null; }) | null;
     session: Session | null;
     items: Record<string, Item>;
@@ -40,6 +40,113 @@ const ProfitText: React.FC<{ value: number }> = ({ value }) => {
     const sign = value > 0 ? '+' : '';
     return <span className={`font-bold ${colorClass}`}>{sign}{value.toLocaleString()} gp</span>;
 };
+
+const UserSearch: React.FC<{ onViewProfile: (username: string) => void; }> = ({ onViewProfile }) => {
+    const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedTerm, setDebouncedTerm] = useState('');
+    const [results, setResults] = useState<SearchedProfile[]>([]);
+    const [isSearching, setIsSearching] = useState(false);
+    const [isFocused, setIsFocused] = useState(false);
+    const searchContainerRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const timer = setTimeout(() => setDebouncedTerm(searchTerm), 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        if (!debouncedTerm.trim()) {
+            setResults([]);
+            return;
+        }
+        const performSearch = async () => {
+            setIsSearching(true);
+            try {
+                const data = await searchProfilesByUsername(debouncedTerm);
+                setResults(data);
+            } catch (error) {
+                console.error("Failed to search for users", error);
+                setResults([]);
+            } finally {
+                setIsSearching(false);
+            }
+        };
+        performSearch();
+    }, [debouncedTerm]);
+    
+    // Close dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
+                setIsFocused(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleSelectUser = (username: string | null) => {
+        if (!username) return;
+        onViewProfile(username);
+        setSearchTerm('');
+        setResults([]);
+        setIsFocused(false);
+    };
+
+    const showResults = isFocused && (searchTerm.length > 0);
+
+    return (
+        <div className="relative max-w-lg mx-auto mb-8" ref={searchContainerRef}>
+            <div className="relative">
+                <SearchIcon className="w-5 h-5 text-gray-500 absolute left-4 top-1/2 -translate-y-1/2" />
+                <input
+                    type="text"
+                    placeholder="Search for a user..."
+                    value={searchTerm}
+                    onChange={e => setSearchTerm(e.target.value)}
+                    onFocus={() => setIsFocused(true)}
+                    className="w-full p-3 pl-12 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:outline-none transition"
+                />
+                 {searchTerm && (
+                    <button onClick={() => setSearchTerm('')} className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-white">
+                        <XIcon className="w-5 h-5"/>
+                    </button>
+                 )}
+            </div>
+
+            {showResults && (
+                <div className="absolute top-full mt-2 w-full bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-20 max-h-80 overflow-y-auto">
+                    {isSearching ? (
+                        <div className="flex justify-center items-center p-4"><Loader size="sm" /></div>
+                    ) : results.length > 0 ? (
+                        <ul>
+                            {results.map(profile => (
+                                <li key={profile.id}>
+                                    <button
+                                        onClick={() => handleSelectUser(profile.username)}
+                                        className="w-full text-left flex items-center gap-3 p-3 hover:bg-gray-700/50 transition-colors"
+                                    >
+                                        <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0"/>
+                                        <div className="flex-1">
+                                            <p className="font-semibold text-white flex items-center gap-2">
+                                                <span>{profile.username}</span>
+                                                {profile.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
+                                            </p>
+                                            <p className="text-sm text-gray-400">Level {profile.level}</p>
+                                        </div>
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    ) : (
+                        <p className="text-gray-500 text-center p-4">No users found.</p>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
 
 const LeaderboardPanel: React.FC<{ onViewProfile: (user: LeaderboardEntry) => void }> = ({ onViewProfile }) => {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -624,8 +731,10 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile, pro
             <div className="text-center mb-8">
                 <UsersIcon className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
                 <h1 className="text-4xl font-bold text-white">Community Hub</h1>
-                <p className="text-gray-400 mt-2">Discuss market trends and see who's making the biggest profits.</p>
+                <p className="text-gray-400 mt-2">Discuss market trends, share flips, and see who's making the biggest profits.</p>
             </div>
+
+            <UserSearch onViewProfile={onViewProfile} />
 
             <div className="flex justify-center mb-6">
                  <div className="flex items-center gap-1 bg-gray-800/60 p-1 rounded-lg">

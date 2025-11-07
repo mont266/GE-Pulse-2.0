@@ -55,6 +55,8 @@ export interface Profile {
   tokens: number;
 }
 
+export type SearchedProfile = Pick<Profile, 'id' | 'username' | 'level' | 'premium'>;
+
 export interface Investment {
   id: string; // Using string for UUID from the database
   user_id: string;

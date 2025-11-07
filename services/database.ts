@@ -1,5 +1,5 @@
 import { supabase, Json } from './supabase';
-import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats, Post, FlipData, Comment } from '../types';
+import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats, Post, FlipData, Comment, SearchedProfile } from '../types';
 
 /**
  * Fetches the item IDs from the current user's watchlist.
@@ -127,6 +127,53 @@ export const updateProfile = async (userId: string, updates: { username: string 
       }
       throw error;
     }
+};
+
+/**
+ * Searches for user profiles by username prefix.
+ * @param searchText The username prefix to search for.
+ * @returns A promise that resolves to an array of matching profiles.
+ */
+export const searchProfilesByUsername = async (searchText: string): Promise<SearchedProfile[]> => {
+    if (!searchText.trim()) {
+        return [];
+    }
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('id, username, level, premium')
+        .ilike('username', `${searchText}%`)
+        .not('username', 'is', null) // Only search for users with a username
+        .limit(10);
+    
+    if (error) {
+        console.error('Error searching profiles:', error);
+        throw error;
+    }
+
+    return (data as SearchedProfile[]) ?? [];
+};
+
+/**
+ * Fetches the total realised profit for a specific user.
+ * This assumes the existence of a `get_user_total_profit` RPC function.
+ * @param userId The ID of the user.
+ * @returns A promise that resolves to the user's total profit.
+ */
+export const fetchUserTotalProfit = async (userId: string): Promise<number> => {
+    const { data, error } = await supabase.rpc('get_user_total_profit', {
+        p_user_id: userId,
+    });
+
+    if (error) {
+        console.error(`Error fetching total profit for user ${userId}:`, error);
+        // If the function doesn't exist, provide a helpful error message.
+        if (error.message.includes('function public.get_user_total_profit')) {
+             throw new Error('Database function `get_user_total_profit` not found. Please add it to your Supabase project.');
+        }
+        throw error;
+    }
+    
+    return data ?? 0;
 };
 
 /**

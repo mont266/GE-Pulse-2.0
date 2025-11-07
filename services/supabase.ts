@@ -308,6 +308,12 @@ export type Database = {
         }
         Returns: Json
       }
+      get_user_total_profit: {
+        Args: {
+          p_user_id: string
+        }
+        Returns: number
+      }
       set_user_role: {
         Args: {
           target_user_id: string

@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
 import { fetchItemMapping, fetchTimeseries, fetchLatestPrices, fetch1hPrices, fetch24hPrices, fetchAllTimePrices } from './services/osrsWikiApi';
-import { fetchUserWatchlist, addToWatchlist, removeFromWatchlist, getProfile, fetchUserInvestments, addInvestment, closeInvestment, clearUserInvestments, deleteInvestment, getProfileByUsername, fetchAppStats, recordLogin, recordActivity, processClosedTrade, spendAiToken, processMultipleSales, updateInvestment } from './services/database';
+import { fetchUserWatchlist, addToWatchlist, removeFromWatchlist, getProfile, fetchUserInvestments, addInvestment, closeInvestment, clearUserInvestments, deleteInvestment, getProfileByUsername, fetchAppStats, recordLogin, recordActivity, processClosedTrade, spendAiToken, processMultipleSales, updateInvestment, fetchUserTotalProfit } from './services/database';
 import type { Item, TimeseriesData, LatestPrice, Profile, PriceAlert, Investment, AggregatePrice, LeaderboardEntry, AppStats, ProgressionNotification, ProgressionNotificationData } from './types';
 import { HomePage } from './components/HomePage';
 import { ItemView } from './components/ItemView';
@@ -50,6 +50,7 @@ export default function App() {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [viewedProfileData, setViewedProfileData] = useState<ViewedProfileData | null>(null);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
   const initialRoutingDone = useRef(false);
 
   // --- Progression System State ---
@@ -357,20 +358,47 @@ export default function App() {
     setIsProfileMenuOpen(false);
   };
 
-  const handleViewProfile = async (leaderboardEntry: LeaderboardEntry) => {
-    if (!leaderboardEntry.username) return;
-    // TODO: Add a loading state for profile viewing
+  const handleViewProfile = async (user: LeaderboardEntry | { username: string | null } | string) => {
+    setIsProfileLoading(true);
+    setViewedProfileData(null);
+    switchView('profile'); // Switch view immediately to show loader
+    
     try {
-        const userProfile = await getProfileByUsername(leaderboardEntry.username);
-        if (userProfile) {
-            setViewedProfileData({ profile: userProfile, profit: leaderboardEntry.total_profit });
-            switchView('profile');
+        let username: string | null;
+        let profit: number | undefined;
+
+        if (typeof user === 'string') {
+            username = user;
         } else {
-            // TODO: Handle user not found error gracefully
-            console.error("Profile not found for username:", leaderboardEntry.username);
+            username = user.username;
+            // 'total_profit' is only on LeaderboardEntry
+            if ('total_profit' in user) {
+                profit = user.total_profit;
+            }
+        }
+
+        if (!username) {
+            throw new Error("Cannot view profile for user without a username.");
+        }
+
+        const userProfile = await getProfileByUsername(username);
+
+        if (userProfile) {
+            // If profit wasn't passed (e.g. from search), fetch it.
+            if (profit === undefined) {
+                profit = await fetchUserTotalProfit(userProfile.id);
+            }
+            setViewedProfileData({ profile: userProfile, profit: profit });
+        } else {
+            throw new Error(`Profile not found for username: ${username}`);
         }
     } catch (error) {
         console.error("Failed to fetch profile:", error);
+        // Optionally, set an error state to show on the profile page
+        // For now, just go back home
+        switchView('home');
+    } finally {
+        setIsProfileLoading(false);
     }
   };
 
@@ -761,6 +789,9 @@ export default function App() {
                   session={session}
                 />;
       case 'profile':
+        if (isProfileLoading) {
+            return <div className="flex justify-center items-center h-full pt-20"><Loader /></div>;
+        }
         if (!viewedProfileData) return null;
         return <ProfilePage
                   key={viewedProfileData.profile.id}
