@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { TimeseriesData } from '../types';
@@ -6,6 +5,7 @@ import { formatLargeNumber } from '../utils/image';
 
 interface VolumeChartProps {
   data: TimeseriesData[];
+  isInitialLoad: boolean;
 }
 
 const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
@@ -27,7 +27,7 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
     return null;
   };
 
-export const VolumeChart: React.FC<VolumeChartProps> = ({ data }) => {
+export const VolumeChart: React.FC<VolumeChartProps> = ({ data, isInitialLoad }) => {
     
   const chartData = data.map(d => ({
     timestamp: d.timestamp,
@@ -73,8 +73,8 @@ export const VolumeChart: React.FC<VolumeChartProps> = ({ data }) => {
             wrapperStyle={{ top: -5, right: 0 }}
             formatter={(value, entry) => <span className="text-gray-300 text-xs">{value}</span>}
         />
-        <Bar dataKey="highPriceVolume" name="Buy Volume" stackId="a" fill="#10b981" />
-        <Bar dataKey="lowPriceVolume" name="Sell Volume" stackId="a" fill="#f87171" />
+        <Bar dataKey="highPriceVolume" name="Buy Volume" stackId="a" fill="#10b981" animationDuration={isInitialLoad ? 800 : 0} />
+        <Bar dataKey="lowPriceVolume" name="Sell Volume" stackId="a" fill="#f87171" animationDuration={isInitialLoad ? 800 : 0} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -1,6 +1,5 @@
-
 import React from 'react';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, ReferenceLine } from 'recharts';
 import type { TimeseriesData } from '../../types';
 
 interface SparklineProps {
@@ -11,6 +10,14 @@ export const Sparkline: React.FC<SparklineProps> = ({ data }) => {
   const priceData = data
     .map(d => ({ timestamp: d.timestamp, price: d.avgHighPrice }))
     .filter(d => d.price !== null && d.price !== undefined) as { timestamp: number; price: number }[];
+
+  const averagePrice = React.useMemo(() => {
+    if (priceData.length < 2) return null;
+    const validPrices = priceData.map(d => d.price).filter((p): p is number => p > 0);
+    if (validPrices.length === 0) return null;
+    const sum = validPrices.reduce((acc, p) => acc + p, 0);
+    return sum / validPrices.length;
+  }, [priceData]);
 
   if (priceData.length < 2) {
     return <div className="h-full w-full flex items-center justify-center text-gray-500 text-xs">Not enough data</div>;
@@ -28,6 +35,14 @@ export const Sparkline: React.FC<SparklineProps> = ({ data }) => {
                 <stop offset="95%" stopColor={strokeColor} stopOpacity={0}/>
             </linearGradient>
         </defs>
+        {averagePrice !== null && (
+            <ReferenceLine 
+                y={averagePrice} 
+                stroke="#6366f1" // indigo-500
+                strokeDasharray="2 2" 
+                strokeWidth={1.5}
+            />
+        )}
         <Area
           type="monotone"
           dataKey="price"

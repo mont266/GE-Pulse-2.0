@@ -1,7 +1,5 @@
 
 
-
-
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -38,6 +36,7 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('home');
   const [items, setItems] = useState<Record<string, Item>>({});
   const [latestPrices, setLatestPrices] = useState<Record<string, LatestPrice>>({});
+  const [prevLatestPrices, setPrevLatestPrices] = useState<Record<string, LatestPrice>>({});
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [timeseries, setTimeseries] = useState<TimeseriesData[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,12 +58,14 @@ export default function App() {
 
   // --- Watchlist, Alerts, and Portfolio State ---
   const [watchlist, setWatchlist] = useState<number[]>([]);
+  const [pendingWatchlistAdds, setPendingWatchlistAdds] = useState(new Set<number>());
   const [alerts, setAlerts] = useLocalStorage<PriceAlert[]>('priceAlerts', []);
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [watchlistTimeseries, setWatchlistTimeseries] = useState<Record<string, TimeseriesData[]>>({});
   const [isAddInvestmentModalOpen, setIsAddInvestmentModalOpen] = useState(false);
   const [investmentModalItem, setInvestmentModalItem] = useState<Item | null>(null);
   const [recentlyViewed, setRecentlyViewed] = useLocalStorage<number[]>('recentlyViewed', []);
+  const [isUserDataLoading, setIsUserDataLoading] = useState(false);
 
   // --- Top Movers State ---
   const [oneHourPrices, setOneHourPrices] = useState<Record<string, AggregatePrice>>({});
@@ -84,12 +85,13 @@ export default function App() {
     setNotifications(prev => prev.filter(n => n.id !== id));
   }, []);
 
-  const handleSetAlertActivity = useCallback(async () => {
+  const handleSetAlertActivity = useCallback(async (priceType: 'high' | 'low') => {
     if (!session) {
       setIsAuthModalOpen(true);
       return;
     }
-    const activityEvents = await recordActivity(session.user.id, 'alert_set');
+    const activityType = priceType === 'high' ? 'alert_set_high' : 'alert_set_low';
+    const activityEvents = await recordActivity(session.user.id, activityType);
     addNotifications(activityEvents);
   }, [session, addNotifications]);
 
@@ -164,6 +166,7 @@ export default function App() {
   useEffect(() => {
     if (session) {
       const loadUserData = async () => {
+        setIsUserDataLoading(true);
         try {
           const [userWatchlist, userInvestments] = await Promise.all([
             fetchUserWatchlist(session.user.id),
@@ -173,12 +176,15 @@ export default function App() {
           setInvestments(userInvestments);
         } catch (err) {
           console.error("Failed to load user data", err);
+        } finally {
+            setIsUserDataLoading(false);
         }
       };
       loadUserData();
     } else {
       setWatchlist([]);
       setInvestments([]);
+      setIsUserDataLoading(false);
     }
   }, [session]);
 
@@ -378,22 +384,30 @@ export default function App() {
     }
     const isWatched = watchlist.includes(itemId);
     const userId = session.user.id;
+
     if (isWatched) {
-      setWatchlist(prev => prev.filter(id => id !== itemId));
-      try {
-        await removeFromWatchlist(userId, itemId);
-      } catch (err) {
-        setWatchlist(prev => [...prev, itemId]);
-      }
-    } else {
-      setWatchlist(prev => [...prev, itemId]);
-      try {
-        await addToWatchlist(userId, itemId);
-        const activityEvents = await recordActivity(userId, 'watchlist_add');
-        addNotifications(activityEvents);
-      } catch (err) {
         setWatchlist(prev => prev.filter(id => id !== itemId));
-      }
+        try {
+            await removeFromWatchlist(userId, itemId);
+        } catch (err) {
+            setWatchlist(prev => [...prev, itemId]); // Revert on failure
+        }
+    } else {
+        setPendingWatchlistAdds(prev => new Set(prev).add(itemId));
+        setWatchlist(prev => [...prev, itemId]);
+        try {
+            await addToWatchlist(userId, itemId);
+            const activityEvents = await recordActivity(userId, 'watchlist_add');
+            addNotifications(activityEvents);
+        } catch (err) {
+            setWatchlist(prev => prev.filter(id => id !== itemId)); // Revert on failure
+        } finally {
+            setPendingWatchlistAdds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(itemId);
+                return newSet;
+            });
+        }
     }
   }, [session, profile, watchlist, addNotifications]);
   
@@ -546,13 +560,14 @@ export default function App() {
 
   const handleRefreshPrices = useCallback(async () => {
     try {
+        setPrevLatestPrices(latestPrices);
         const prices = await fetchLatestPrices();
         setLatestPrices(prices);
     } catch (err) {
         console.error("Failed to refresh prices", err);
         setError("Failed to refresh latest prices. Please try again later.");
     }
-  }, []);
+  }, [latestPrices]);
 
   const getNavButtonClasses = (viewName: View, disabled = false) => {
     const base = 'flex items-center justify-start gap-3 px-4 py-2 rounded-lg transition-colors w-full text-left';
@@ -651,8 +666,10 @@ export default function App() {
             isLoading={isItemLoading}
             onBack={handleBack}
             onRefresh={handleSelectTimedItem}
+            onRefreshPrices={handleRefreshPrices}
             watchlist={watchlist}
             toggleWatchlist={toggleWatchlist}
+            pendingWatchlistAdds={pendingWatchlistAdds}
             alerts={alerts}
             setAlerts={setAlerts}
             onOpenAddInvestmentModal={handleOpenAddInvestmentModal}
@@ -697,14 +714,22 @@ export default function App() {
                   onSpendToken={handleSpendToken}
                />;
       case 'community':
-        return <CommunityPage onViewProfile={handleViewProfile} />;
+        return <CommunityPage 
+                    onViewProfile={handleViewProfile} 
+                    profile={profile}
+                    session={session}
+                    items={items}
+                    onSelectItem={handleItemSelection}
+                />;
       case 'watchlist':
         return <Watchlist 
                   items={watchlistItems} 
                   onSelectItem={handleItemSelection} 
-                  latestPrices={latestPrices} 
+                  latestPrices={latestPrices}
+                  prevLatestPrices={prevLatestPrices}
                   timeseries={watchlistTimeseries}
                   toggleWatchlist={toggleWatchlist}
+                  isLoading={isUserDataLoading}
                />;
       case 'alerts':
         return <AlertsPage
@@ -713,6 +738,7 @@ export default function App() {
                  items={items}
                  latestPrices={latestPrices}
                  onSelectItem={handleItemSelection}
+                 profile={profile}
                />;
       case 'portfolio':
         return <PortfolioPage 
@@ -725,6 +751,8 @@ export default function App() {
                   onEditInvestment={handleUpdateInvestment}
                   onRefreshPrices={handleRefreshPrices}
                   onSelectItem={handleItemSelection}
+                  profile={profile}
+                  session={session}
                 />;
       case 'profile':
         if (!viewedProfileData) return null;
@@ -771,7 +799,7 @@ export default function App() {
       )}
       <ProgressionNotifications notifications={notifications} onRemove={removeNotification} />
       
-      <div className="min-h-screen bg-gray-900 text-gray-100 font-sans flex flex-col md:flex-row">
+      <div className="min-h-screen md:h-screen bg-gray-900 text-gray-100 font-sans flex flex-col md:flex-row">
         
         {/* --- DESKTOP SIDEBAR --- */}
         <header className="hidden md:w-64 bg-gray-800/50 backdrop-blur-sm md:p-6 md:h-screen md:flex md:flex-col md:border-r md:border-gray-700/50">
@@ -779,7 +807,7 @@ export default function App() {
             <PulseIcon className="w-8 h-8 text-emerald-400" />
             <h1 className="text-2xl font-bold text-white tracking-tighter">GE Pulse</h1>
           </div>
-          <nav className="flex-col gap-2 hidden md:flex">
+          <nav className="flex-1 flex-col gap-2 hidden md:flex overflow-y-auto overflow-x-hidden">
             <button onClick={() => switchView('home')} className={getNavButtonClasses('home')}>
               <HomeIcon className="w-5 h-5" />
               <span className="font-medium">Home</span>
@@ -909,7 +937,7 @@ export default function App() {
               </div>
             </header>
 
-            <main className="flex-1 p-4 md:p-8 overflow-y-auto pb-24 md:pb-8">
+            <main className="flex-1 overflow-y-auto px-4 pb-24 md:px-8 md:pb-8">
               {renderContent()}
               <footer className="mt-16 pt-6 border-t border-gray-700/50 text-center text-xs text-gray-500">
                 <p className="font-semibold">GE Pulse - Beta V1.0</p>

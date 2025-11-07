@@ -1,15 +1,35 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import { Card } from './ui/Card';
 import { Loader } from './ui/Loader';
 import { Button } from './ui/Button';
-import { UsersIcon, TrophyIcon } from './icons/Icons';
-import { fetchLeaderboard } from '../services/database';
-import type { LeaderboardEntry, LeaderboardTimeRange } from '../types';
+import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon } from './icons/Icons';
+import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment } from '../services/database';
+import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData } from '../types';
+import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 
 interface CommunityPageProps {
-    onViewProfile: (user: LeaderboardEntry) => void;
+    onViewProfile: (user: LeaderboardEntry | { username: string | null }) => void;
+    profile: (Profile & { email: string | null; }) | null;
+    session: Session | null;
+    items: Record<string, Item>;
+    onSelectItem: (item: Item) => void;
 }
+
+const timeAgo = (dateStr: string) => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const seconds = Math.round((now.getTime() - date.getTime()) / 1000);
+    const minutes = Math.round(seconds / 60);
+    const hours = Math.round(minutes / 60);
+    const days = Math.round(hours / 24);
+
+    if (seconds < 60) return `${seconds}s ago`;
+    if (minutes < 60) return `${minutes}m ago`;
+    if (hours < 24) return `${hours}h ago`;
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+};
 
 const ProfitText: React.FC<{ value: number }> = ({ value }) => {
     const colorClass = value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-400' : 'text-gray-400';
@@ -17,26 +37,7 @@ const ProfitText: React.FC<{ value: number }> = ({ value }) => {
     return <span className={`font-bold ${colorClass}`}>{sign}{value.toLocaleString()} gp</span>;
 };
 
-const RankIcon: React.FC<{ rank: number }> = ({ rank }) => {
-    const rankClasses: Record<number, string> = {
-        1: 'text-yellow-400',
-        2: 'text-gray-300',
-        3: 'text-yellow-600',
-    };
-    if (rank <= 3) {
-        return <TrophyIcon className={`w-6 h-6 ${rankClasses[rank]}`} />;
-    }
-    return <span className="text-gray-400 font-bold text-lg w-6 text-center">{rank}</span>;
-};
-
-const TIME_RANGES: { label: string; value: LeaderboardTimeRange }[] = [
-    { label: 'Today', value: 'today' },
-    { label: 'This Month', value: 'month' },
-    { label: 'This Year', value: 'year' },
-    { label: 'All Time', value: 'all' },
-];
-
-export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile }) => {
+const LeaderboardPanel: React.FC<{ onViewProfile: (user: LeaderboardEntry) => void }> = ({ onViewProfile }) => {
     const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
     const [timeRange, setTimeRange] = useState<LeaderboardTimeRange>('all');
     const [isLoading, setIsLoading] = useState(true);
@@ -51,7 +52,7 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile }) =
                 setLeaderboard(data);
             } catch (err) {
                 console.error(err);
-                setError("Failed to load the community leaderboard. The G.E. scribes might be on a break.");
+                setError("Failed to load the community leaderboard.");
             } finally {
                 setIsLoading(false);
             }
@@ -59,72 +60,306 @@ export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile }) =
         loadLeaderboard();
     }, [timeRange]);
 
-    const renderContent = () => {
-        if (isLoading) {
-            return <div className="flex justify-center items-center h-64"><Loader /></div>;
-        }
+    const TIME_RANGES: { label: string; value: LeaderboardTimeRange }[] = [
+        { label: 'Today', value: 'today' }, { label: 'This Month', value: 'month' },
+        { label: 'This Year', value: 'year' }, { label: 'All Time', value: 'all' },
+    ];
 
-        if (error) {
-            return <div className="text-center text-red-400 mt-8">{error}</div>;
-        }
-        
-        if (leaderboard.length === 0) {
-            return (
-                 <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
-                    <p className="text-gray-500">The leaderboard is empty for this time period. Be the first to close a profitable trade!</p>
-                </div>
-            );
-        }
-
-        return (
-            <div className="space-y-3">
-                {leaderboard.map((user) => (
-                    <Card key={`${user.username}-${user.rank}`} className="p-4">
-                        <div className="flex items-center gap-4">
-                            <div className="flex-shrink-0">
-                                <RankIcon rank={user.rank} />
-                            </div>
-                            <div className="flex-1">
-                                <Button variant="ghost" className="p-0 h-auto text-lg font-bold text-white hover:text-emerald-300" onClick={() => onViewProfile(user)}>
-                                    {user.username}
-                                </Button>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-sm text-gray-400">Total Profit</p>
-                                <ProfitText value={user.total_profit} />
-                            </div>
-                        </div>
-                    </Card>
-                ))}
-            </div>
-        );
+    const RankIcon: React.FC<{ rank: number }> = ({ rank }) => {
+        const rankClasses: Record<number, string> = { 1: 'text-yellow-400', 2: 'text-gray-300', 3: 'text-yellow-600' };
+        if (rank <= 3) return <TrophyIcon className={`w-6 h-6 ${rankClasses[rank]}`} />;
+        return <span className="text-gray-400 font-bold text-lg w-6 text-center">{rank}</span>;
     };
     
     return (
-        <div className="max-w-4xl mx-auto">
-            <div className="text-center mb-8">
-                <UsersIcon className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
-                <h1 className="text-4xl font-bold text-white">Community Leaderboard</h1>
-                <p className="text-gray-400 mt-2">See who's making the biggest profits on the Grand Exchange.</p>
-            </div>
-
-            <div className="flex justify-center mb-6">
-                <div className="flex items-center gap-1 bg-gray-800/60 p-1 rounded-lg">
+        <div>
+             <div className="flex justify-center mb-6">
+                <div className="flex items-center gap-1 bg-gray-900/50 p-1 rounded-lg">
                     {TIME_RANGES.map(({ label, value }) => (
-                        <Button
-                            key={value}
-                            size="sm"
-                            variant={timeRange === value ? 'secondary' : 'ghost'}
-                            onClick={() => setTimeRange(value)}
-                            className={`px-3 py-1 ${timeRange !== value ? 'text-gray-400 hover:text-white' : 'shadow-md'}`}
-                        >
+                        <Button key={value} size="sm" variant={timeRange === value ? 'secondary' : 'ghost'}
+                            onClick={() => setTimeRange(value)} className={`px-3 py-1 ${timeRange !== value ? 'text-gray-400 hover:text-white' : 'shadow-md'}`}>
                             {label}
                         </Button>
                     ))}
                 </div>
             </div>
+            {isLoading && <div className="flex justify-center items-center h-64"><Loader /></div>}
+            {error && <div className="text-center text-red-400 mt-8">{error}</div>}
+            {!isLoading && !error && (
+                 leaderboard.length === 0 ? (
+                    <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
+                        <p className="text-gray-500">The leaderboard is empty for this time period.</p>
+                    </div>
+                ) : (
+                    <div className="space-y-3">
+                        {leaderboard.map((user) => (
+                            <Card key={`${user.username}-${user.rank}`} className="p-4">
+                                <div className="flex items-center gap-4">
+                                    <RankIcon rank={user.rank} />
+                                    <div className="flex-1">
+                                        <button className="p-0 h-auto text-lg font-bold text-white hover:text-emerald-300 transition-colors" onClick={() => onViewProfile(user)}>
+                                            {user.username}
+                                        </button>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-sm text-gray-400">Total Profit</p>
+                                        <ProfitText value={user.total_profit} />
+                                    </div>
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                )
+            )}
+        </div>
+    )
+};
 
-            {renderContent()}
+
+const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {onViewProfile: (user: {username: string | null}) => void}> = ({ profile, session, items, onSelectItem, onViewProfile }) => {
+    const [posts, setPosts] = useState<Post[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    const fetchAndSetPosts = useCallback(async () => {
+        try {
+            const fetchedPosts = await fetchPosts();
+            setPosts(fetchedPosts);
+        } catch (err) {
+            setError("Failed to load community feed.");
+            console.error(err);
+        } finally {
+            setIsLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        fetchAndSetPosts();
+    }, [fetchAndSetPosts]);
+
+    const handlePostCreated = (newPost: Post) => {
+        setPosts(prevPosts => [newPost, ...prevPosts]);
+    };
+
+    return (
+        <div className="space-y-6">
+            {session && profile && <CreatePostForm profile={profile} session={session} onPostCreated={handlePostCreated} />}
+            
+            {isLoading && <div className="flex justify-center items-center h-64"><Loader /></div>}
+            {error && <div className="text-center text-red-400 mt-8">{error}</div>}
+            {!isLoading && !error && posts.length === 0 && (
+                 <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
+                    <p className="text-gray-500">The community feed is empty. Be the first to post!</p>
+                </div>
+            )}
+            <div className="space-y-6">
+                {posts.map(post => (
+                    <PostCard key={post.id} post={post} items={items} onSelectItem={onSelectItem} profile={profile} session={session} onViewProfile={onViewProfile} />
+                ))}
+            </div>
+        </div>
+    );
+};
+
+const CreatePostForm: React.FC<{ profile: Profile; session: Session; onPostCreated: (post: Post) => void; }> = ({ profile, session, onPostCreated }) => {
+    const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string|null>(null);
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!content.trim() && !title.trim()) return;
+
+        setIsSubmitting(true);
+        setError(null);
+        try {
+            const newPost = await createPost(session.user.id, { title: title.trim(), content: content.trim() });
+            onPostCreated(newPost);
+            setTitle('');
+            setContent('');
+        } catch (err) {
+            setError("Failed to create post.");
+            console.error(err);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <Card>
+            <form onSubmit={handleSubmit}>
+                <div className="flex items-center gap-3 mb-4">
+                     <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0"/>
+                     <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="Post title (optional)" className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-2 text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition" />
+                </div>
+                <textarea value={content} onChange={e => setContent(e.target.value)} placeholder={`What's on your mind, ${profile.username}?`}
+                    className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition min-h-[80px]" required />
+                <div className="flex justify-end items-center mt-3">
+                    {error && <p className="text-red-400 text-sm mr-4">{error}</p>}
+                    <Button type="submit" disabled={isSubmitting || !content.trim()}>
+                        {isSubmitting ? <Loader size="sm" /> : 'Post'}
+                    </Button>
+                </div>
+            </form>
+        </Card>
+    );
+};
+
+const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile }) => {
+    const [isCommentsOpen, setIsCommentsOpen] = useState(false);
+    const [comments, setComments] = useState<Comment[]>([]);
+    const [isCommentsLoading, setIsCommentsLoading] = useState(false);
+    const [commentCount, setCommentCount] = useState(post.comment_count);
+    
+    const handleToggleComments = async () => {
+        const currentlyOpen = isCommentsOpen;
+        setIsCommentsOpen(!currentlyOpen);
+        if (!currentlyOpen && comments.length === 0 && commentCount > 0) {
+            setIsCommentsLoading(true);
+            try {
+                const fetchedComments = await fetchCommentsForPost(post.id);
+                setComments(fetchedComments);
+            } catch (error) {
+                console.error("Failed to fetch comments", error);
+            } finally {
+                setIsCommentsLoading(false);
+            }
+        }
+    };
+    
+    const handleCommentAdded = (newComment: Comment) => {
+        setComments(prev => [...prev, newComment]);
+        setCommentCount(prev => prev + 1);
+    }
+    
+    const item = post.flip_data ? items[post.flip_data.item_id] : null;
+
+    return (
+        <Card className="p-5">
+            <div className="flex items-start gap-4">
+                <UserIcon className="w-10 h-10 p-2 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+                <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => onViewProfile({ username: post.profiles.username })} className="font-bold text-white hover:underline">{post.profiles.username || 'Anonymous'}</button>
+                        {post.profiles.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
+                        <span className="text-gray-400 text-sm">· {timeAgo(post.created_at)}</span>
+                    </div>
+                    <div className="text-gray-300 mt-2 space-y-3">
+                        {post.title && <h3 className="text-lg font-semibold text-white">{post.title}</h3>}
+                        {post.content && <p className="whitespace-pre-wrap">{post.content}</p>}
+                        {post.flip_data && item && <FlipPost flip={post.flip_data} item={item} onSelectItem={onSelectItem} />}
+                    </div>
+                </div>
+            </div>
+             <div className="flex items-center gap-4 mt-4 pl-14">
+                <button onClick={handleToggleComments} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">
+                    <MessageSquareIcon className="w-5 h-5" />
+                    <span>{commentCount} Comment{commentCount !== 1 && 's'}</span>
+                </button>
+            </div>
+            {isCommentsOpen && (
+                 <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4">
+                    {isCommentsLoading ? <div className="flex justify-center p-4"><Loader /></div> :
+                     comments.length > 0 ? (
+                        <div className="space-y-4">
+                            {comments.map(c => <CommentCard key={c.id} comment={c} onViewProfile={onViewProfile} />)}
+                        </div>
+                    ) : <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>}
+                     {session && profile && <CreateCommentForm postId={post.id} session={session} onCommentAdded={handleCommentAdded} />}
+                </div>
+            )}
+        </Card>
+    )
+};
+
+const FlipPost: React.FC<{ flip: FlipData; item: Item; onSelectItem: (item: Item) => void; }> = ({ flip, item, onSelectItem }) => {
+    return (
+        <div onClick={() => onSelectItem(item)} className="bg-gray-900/50 border border-gray-700/50 rounded-lg p-4 cursor-pointer hover:border-gray-600 transition-colors">
+            <div className="flex items-center gap-4">
+                 <img src={getHighResImageUrl(flip.item_name)} onError={(e) => { e.currentTarget.src = createIconDataUrl(item.icon); }} alt={flip.item_name} className="w-12 h-12 object-contain bg-gray-700/50 rounded-md"/>
+                 <div className="flex-1">
+                     <p className="font-bold text-white">{flip.quantity.toLocaleString()} x {flip.item_name}</p>
+                     <p className="text-xs text-gray-400">ROI: <span className="font-semibold text-emerald-400">{flip.roi.toFixed(2)}%</span></p>
+                 </div>
+                 <div className="text-right">
+                     <p className="text-sm text-gray-400">Profit</p>
+                     <p className="text-xl font-bold text-emerald-400">+{formatLargeNumber(flip.profit)}</p>
+                 </div>
+            </div>
+        </div>
+    )
+};
+
+const CommentCard: React.FC<{ comment: Comment; onViewProfile: (user: {username: string | null}) => void; }> = ({ comment, onViewProfile }) => (
+     <div className="flex items-start gap-3">
+        <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+        <div className="flex-1 bg-gray-700/40 rounded-lg px-3 py-2">
+            <div className="flex items-center gap-2">
+                <button onClick={() => onViewProfile({ username: comment.profiles.username })} className="font-bold text-white text-sm hover:underline">{comment.profiles.username || 'Anonymous'}</button>
+                 {comment.profiles.premium && <StarIcon className="w-3 h-3 text-yellow-400" />}
+                <span className="text-gray-500 text-xs">· {timeAgo(comment.created_at)}</span>
+            </div>
+            <p className="text-gray-300 text-sm mt-1 whitespace-pre-wrap">{comment.content}</p>
+        </div>
+    </div>
+);
+
+const CreateCommentForm: React.FC<{ postId: string; session: Session; onCommentAdded: (comment: Comment) => void; }> = ({ postId, session, onCommentAdded }) => {
+    const [content, setContent] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!content.trim()) return;
+        setIsSubmitting(true);
+        try {
+            const newComment = await createComment(session.user.id, postId, content.trim());
+            onCommentAdded(newComment);
+            setContent('');
+        } catch (error) {
+            console.error("Failed to post comment", error);
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="flex items-start gap-3 mt-4">
+            <UserIcon className="w-8 h-8 p-1.5 bg-gray-700/60 text-emerald-300 rounded-full flex-shrink-0 mt-1"/>
+            <div className="flex-1">
+                 <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="Write a comment..." rows={1}
+                    className="w-full bg-gray-700/40 border border-gray-600 rounded-lg p-2 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition resize-none" />
+                <div className="flex justify-end mt-2">
+                     <Button size="sm" type="submit" disabled={isSubmitting || !content.trim()}>
+                        {isSubmitting ? <Loader size="sm" /> : 'Comment'}
+                    </Button>
+                </div>
+            </div>
+        </form>
+    )
+};
+
+
+export const CommunityPage: React.FC<CommunityPageProps> = ({ onViewProfile, profile, session, items, onSelectItem }) => {
+    const [activeTab, setActiveTab] = useState<'feed' | 'leaderboard'>('feed');
+
+    return (
+        <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-8">
+                <UsersIcon className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
+                <h1 className="text-4xl font-bold text-white">Community Hub</h1>
+                <p className="text-gray-400 mt-2">Discuss market trends and see who's making the biggest profits.</p>
+            </div>
+
+            <div className="flex justify-center mb-6">
+                 <div className="flex items-center gap-1 bg-gray-800/60 p-1 rounded-lg">
+                    <Button size="md" variant={activeTab === 'feed' ? 'secondary' : 'ghost'} onClick={() => setActiveTab('feed')} className="px-6 py-2">Community Feed</Button>
+                    <Button size="md" variant={activeTab === 'leaderboard' ? 'secondary' : 'ghost'} onClick={() => setActiveTab('leaderboard')} className="px-6 py-2">Leaderboard</Button>
+                </div>
+            </div>
+            
+            {activeTab === 'feed' ? <CommunityFeedPanel profile={profile} session={session} items={items} onSelectItem={onSelectItem} onViewProfile={onViewProfile} /> : <LeaderboardPanel onViewProfile={onViewProfile} />}
         </div>
     );
 };

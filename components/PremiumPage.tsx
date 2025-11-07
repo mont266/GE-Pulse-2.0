@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
-import { ArrowLeftIcon, StarIcon, BotIcon, ZapIcon, CheckCircleIcon, ChevronDownIcon } from './icons/Icons';
+import { ArrowLeftIcon, StarIcon, BotIcon, ZapIcon, CheckCircleIcon, ChevronDownIcon, BellIcon, BriefcaseIcon } from './icons/Icons';
 
 interface PremiumPageProps {
   onBack: () => void;
@@ -103,6 +103,16 @@ export const PremiumPage: React.FC<PremiumPageProps> = ({ onBack }) => {
                         icon={<BotIcon className="w-6 h-6 text-emerald-400"/>}
                         title="+2 Daily AI Tokens"
                         description="Receive bonus AI Assistant tokens every day with your login streak, allowing for more market analyses and flipping suggestions."
+                    />
+                     <Benefit 
+                        icon={<BellIcon className="w-6 h-6 text-emerald-400"/>}
+                        title="Unlimited Price Alerts"
+                        description="Set as many price alerts as you need to track every market opportunity. Free users are limited to 10 active alerts."
+                    />
+                     <Benefit 
+                        icon={<BriefcaseIcon className="w-6 h-6 text-emerald-400"/>}
+                        title="Multiple Watchlists (Coming Soon)"
+                        description="Organize your investments with multiple, customizable watchlists. Free users are limited to a single list."
                     />
                     <Benefit 
                         icon={<StarIcon className="w-6 h-6 text-emerald-400"/>}

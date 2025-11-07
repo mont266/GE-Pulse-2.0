@@ -1,15 +1,15 @@
-
-import React, { useState, useMemo, useEffect } from 'react';
-import type { Investment, Item, LatestPrice, TimeseriesData } from '../types';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import type { Investment, Item, LatestPrice, Profile } from '../types';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
-import { BriefcaseIcon, Trash2Icon, EditIcon, RefreshCwIcon } from './icons/Icons';
+import { BriefcaseIcon, Trash2Icon, EditIcon, RefreshCwIcon, Share2Icon, CheckIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 import { SellInvestmentModal } from './SellInvestmentModal';
 import { EditInvestmentModal } from './EditInvestmentModal';
 import { Loader } from './ui/Loader';
 import { PortfolioChart } from './PortfolioChart';
-
+import { createPost } from '../services/database';
 
 interface PortfolioPageProps {
   investments: Investment[];
@@ -21,11 +21,54 @@ interface PortfolioPageProps {
   onEditInvestment: (investmentId: string, updates: Partial<Pick<Investment, 'quantity' | 'purchase_price' | 'purchase_date'>>) => Promise<void>;
   onRefreshPrices: () => Promise<void>;
   onSelectItem: (item: Item) => void;
+  profile: (Profile & { email: string | null; }) | null;
+  session: Session | null;
 }
 
 type TimeRange = '1M' | '3M' | '1Y' | 'ALL';
 
 type NumberFormat = 'raw' | 'short';
+
+const useNumberTicker = (value: number) => {
+    const [displayValue, setDisplayValue] = useState(value);
+    const prevValueRef = useRef(value);
+
+    useEffect(() => {
+        const startValue = prevValueRef.current;
+        const endValue = value;
+        prevValueRef.current = value;
+
+        if (startValue === endValue) {
+            // Ensure displayValue is up to date if the value hasn't changed but a re-render occurred
+            if (displayValue !== endValue) setDisplayValue(endValue);
+            return;
+        }
+
+        let startTime: number;
+        const duration = 750; // ms
+
+        const animate = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const progress = Math.min(timestamp - startTime, duration);
+            const percentage = progress / duration;
+            // Ease-out cubic function for a smooth slowdown
+            const easedPercentage = 1 - Math.pow(1 - percentage, 3);
+
+            const animatedValue = startValue + (endValue - startValue) * easedPercentage;
+            setDisplayValue(animatedValue);
+
+            if (progress < duration) {
+                requestAnimationFrame(animate);
+            } else {
+                setDisplayValue(endValue); // Ensure it ends on the exact value
+            }
+        };
+        requestAnimationFrame(animate);
+    }, [value, displayValue]);
+
+    return displayValue;
+};
+
 
 const TooltipSpan: React.FC<{ children: React.ReactNode; fullValue: string }> = ({ children, fullValue }) => (
     <span className="relative group cursor-help">
@@ -45,7 +88,7 @@ const TooltipSpan: React.FC<{ children: React.ReactNode; fullValue: string }> = 
 );
 
 
-export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items, latestPrices, onCloseInvestment, onClearPortfolio, onDeleteInvestment, onEditInvestment, onRefreshPrices, onSelectItem }) => {
+export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items, latestPrices, onCloseInvestment, onClearPortfolio, onDeleteInvestment, onEditInvestment, onRefreshPrices, onSelectItem, profile, session }) => {
     const [investmentToSell, setInvestmentToSell] = useState<Investment | null>(null);
     const [investmentToEdit, setInvestmentToEdit] = useState<Investment | null>(null);
     const [investmentToDelete, setInvestmentToDelete] = useState<Investment | null>(null);
@@ -63,33 +106,47 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     const [numberFormat, setNumberFormat] = useState<NumberFormat>('short');
     const [isRefreshing, setIsRefreshing] = useState(false);
 
+    // State for sharing flips
+    const [sharingFlipId, setSharingFlipId] = useState<string | null>(null);
+    const [sharedFlips, setSharedFlips] = useState<Set<string>>(new Set());
+    const [shareNotification, setShareNotification] = useState<string | null>(null);
+
+
     const ProfitText: React.FC<{ value: number; format: NumberFormat }> = ({ value, format }) => {
-        const colorClass = value > 0 ? 'text-emerald-400' : value < 0 ? 'text-red-400' : 'text-gray-400';
-        const sign = value > 0 ? '+' : '';
-        const formattedValue = format === 'raw' ? value.toLocaleString() : formatLargeNumber(value);
-        const displayValue = `${sign}${formattedValue} gp`;
-    
+        const animatedValue = useNumberTicker(value);
+        const displayValue = Math.round(animatedValue);
+        const colorClass = displayValue > 0 ? 'text-emerald-400' : displayValue < 0 ? 'text-red-400' : 'text-gray-400';
+        const sign = displayValue > 0 ? '+' : '';
+        const formattedValue = format === 'raw' ? displayValue.toLocaleString() : formatLargeNumber(displayValue);
+        const displayString = `${sign}${formattedValue} gp`;
+
+        const finalFullValue = `${value > 0 ? '+' : ''}${value.toLocaleString()}`;
+
         if (format === 'short') {
             return (
-                <TooltipSpan fullValue={`${sign}${value.toLocaleString()}`}>
-                    <span className={colorClass}>{displayValue}</span>
+                <TooltipSpan fullValue={finalFullValue}>
+                    <span className={colorClass}>{displayString}</span>
                 </TooltipSpan>
             );
         }
-        return <span className={colorClass}>{displayValue}</span>;
+        return <span className={colorClass}>{displayString}</span>;
     };
     
     const FormattedGP: React.FC<{ value: number; format: NumberFormat; className?: string }> = ({ value, format, className = '' }) => {
-        const displayValue = (format === 'raw' ? value.toLocaleString() : formatLargeNumber(value)) + ' gp';
-    
+        const animatedValue = useNumberTicker(value);
+        const displayValue = Math.round(animatedValue);
+        const displayString = (format === 'raw' ? displayValue.toLocaleString() : formatLargeNumber(displayValue)) + ' gp';
+        
+        const finalFullValue = value.toLocaleString();
+
         if (format === 'short') {
             return (
-                <TooltipSpan fullValue={value.toLocaleString()}>
-                    <span className={className}>{displayValue}</span>
+                <TooltipSpan fullValue={finalFullValue}>
+                    <span className={className}>{displayString}</span>
                 </TooltipSpan>
             );
         }
-        return <span className={className}>{displayValue}</span>;
+        return <span className={className}>{displayString}</span>;
     };
 
     const handleRefresh = async () => {
@@ -243,6 +300,44 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
         return { totalValue, unrealisedProfit, realisedProfit, totalTaxPaid };
     }, [openPositions, closedPositions, latestPrices]);
 
+    const handleShareFlip = async (inv: Investment) => {
+        if (!session || !profile?.username) return;
+        setSharingFlipId(inv.id);
+        
+        try {
+            const item = items[inv.item_id];
+            const purchaseValue = inv.purchase_price * inv.quantity;
+            const sellValue = inv.sell_price! * inv.quantity;
+            const profit = sellValue - purchaseValue - (inv.tax_paid ?? 0);
+            const roi = purchaseValue > 0 ? (profit / purchaseValue) * 100 : 0;
+
+            await createPost(session.user.id, {
+                title: null,
+                content: `Check out my latest flip on the ${item.name}!`,
+                flip_data: {
+                    item_id: item.id,
+                    item_name: item.name,
+                    quantity: inv.quantity,
+                    purchase_price: inv.purchase_price,
+                    sell_price: inv.sell_price!,
+                    profit: profit,
+                    roi: roi,
+                }
+            });
+
+            setSharedFlips(prev => new Set(prev).add(inv.id));
+            setShareNotification("Successfully shared flip to the community feed!");
+
+        } catch (error) {
+            console.error("Failed to share flip", error);
+            setShareNotification("Error: Could not share flip.");
+        } finally {
+            setSharingFlipId(null);
+            setTimeout(() => setShareNotification(null), 3000);
+        }
+    };
+
+
     if (investments.length === 0) {
         return (
           <div className="text-center py-20 flex flex-col items-center">
@@ -255,6 +350,11 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     
     return (
         <div>
+            {shareNotification && (
+                <div className={`fixed top-5 right-5 ${shareNotification.includes("Error") ? 'bg-red-500' : 'bg-emerald-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
+                    {shareNotification}
+                </div>
+            )}
             {investmentToSell && items[investmentToSell.item_id] && (
                 <SellInvestmentModal
                     investment={investmentToSell}
@@ -341,7 +441,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                             aria-hidden="true"
                             className={`${
                                 numberFormat === 'short' ? 'translate-x-5' : 'translate-x-0'
-                            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
                             />
                         </button>
                     </div>
@@ -479,14 +579,35 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                                         <p className="text-gray-400">Buy: <FormattedGP value={inv.purchase_price} format={numberFormat} /></p>
                                         <p className="text-gray-400">Sell: <FormattedGP value={inv.sell_price} format={numberFormat} /></p>
                                     </div>
-                                    <div className="flex-grow flex items-center justify-between gap-4">
+                                    <div className="flex-grow flex items-center justify-between gap-2">
                                         <div className="text-sm">
                                             <p className="text-gray-400">Realised P/L</p>
                                             <p className="font-semibold"><ProfitText value={profit} format={numberFormat} /></p>
                                         </div>
-                                        <Button size="icon" variant="ghost" className="w-8 h-8 text-gray-500 hover:text-red-400" onClick={() => { setInvestmentToDelete(inv); setDeleteError(null); }}>
-                                            <Trash2Icon className="w-4 h-4" />
-                                        </Button>
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                size="icon"
+                                                variant="ghost"
+                                                className="w-8 h-8 text-gray-500 hover:text-emerald-400"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleShareFlip(inv);
+                                                }}
+                                                disabled={sharedFlips.has(inv.id) || sharingFlipId === inv.id}
+                                                title="Share this flip to the community feed"
+                                            >
+                                                {sharingFlipId === inv.id ? (
+                                                    <Loader size="sm" />
+                                                ) : sharedFlips.has(inv.id) ? (
+                                                    <CheckIcon className="w-4 h-4 text-emerald-400" />
+                                                ) : (
+                                                    <Share2Icon className="w-4 h-4" />
+                                                )}
+                                            </Button>
+                                            <Button size="icon" variant="ghost" className="w-8 h-8 text-gray-500 hover:text-red-400" onClick={() => { setInvestmentToDelete(inv); setDeleteError(null); }}>
+                                                <Trash2Icon className="w-4 h-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </Card>
                             );

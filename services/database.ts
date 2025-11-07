@@ -1,7 +1,8 @@
 
 
-import { supabase } from './supabase';
-import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats } from '../types';
+
+import { supabase, Json } from './supabase';
+import type { Profile, Investment, LeaderboardEntry, LeaderboardTimeRange, AppStats, StatsTimeRange, ProgressionNotificationData, Achievement, UserProgressStats, Post, FlipData, Comment } from '../types';
 
 /**
  * Fetches the item IDs from the current user's watchlist.
@@ -429,7 +430,7 @@ export const recordLogin = async (userId: string): Promise<ProgressionNotificati
     return (data as ProgressionNotificationData[]) ?? [];
 }
 
-export const recordActivity = async (userId: string, activityType: 'watchlist_add' | 'alert_set'): Promise<ProgressionNotificationData[]> => {
+export const recordActivity = async (userId: string, activityType: 'watchlist_add' | 'alert_set_high' | 'alert_set_low'): Promise<ProgressionNotificationData[]> => {
     const { data, error } = await supabase.rpc('record_activity', { p_user_id: userId, p_activity_type: activityType });
     if (error) {
         console.error(`Error recording activity ${activityType}:`, error);
@@ -519,4 +520,108 @@ export const spendAiToken = async (userId: string): Promise<number> => {
     }
     
     return data;
+};
+
+// --- Community Feed Functions ---
+
+/**
+ * Creates a new post in the community feed.
+ * @param userId The ID of the user making the post.
+ * @param postData The data for the post, including optional title, content, and flip data.
+ * @returns The newly created post.
+ */
+export const createPost = async (userId: string, postData: { title?: string | null; content?: string | null; flip_data?: FlipData | null }): Promise<Post> => {
+    // FIX: Explicitly create the payload and cast flip_data to Json to satisfy Supabase client types.
+    const payload = {
+      user_id: userId,
+      title: postData.title,
+      content: postData.content,
+      flip_data: postData.flip_data as unknown as Json
+    };
+
+    const { data, error } = await supabase
+        .from('posts')
+        .insert(payload)
+        .select('*, profiles(username, level, premium)')
+        .single();
+
+    if (error) {
+        console.error('Error creating post:', error);
+        throw error;
+    }
+    if (!data) {
+        throw new Error('Failed to create post. This might be due to database permissions.');
+    }
+     // Manually add the comment_count since it's not returned on insert
+    // FIX: Cast the return type to 'Post' to align with application types, resolving flip_data incompatibility.
+    return { ...data, comment_count: 0 } as unknown as Post;
+};
+
+/**
+ * Fetches all posts for the community feed, including author info and comment count.
+ * @returns A promise that resolves to an array of posts.
+ */
+export const fetchPosts = async (): Promise<Post[]> => {
+    const { data, error } = await supabase
+        .from('posts')
+        .select('*, profiles(username, level, premium), comments(count)')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.error('Error fetching posts:', error);
+        throw error;
+    }
+
+    // Transform the data to match the Post type
+    const posts = (data || []).map(p => ({
+        ...p,
+        comment_count: Array.isArray(p.comments) ? p.comments[0]?.count ?? 0 : 0
+    }));
+    // FIX: Cast the return type to 'Post[]' to align with application types, resolving flip_data incompatibility.
+    return posts as unknown as Post[];
+};
+
+/**
+ * Creates a new comment on a post.
+ * @param userId The ID of the user commenting.
+ * @param postId The ID of the post being commented on.
+ * @param content The text content of the comment.
+ * @returns The newly created comment with author info.
+ */
+export const createComment = async (userId: string, postId: string, content: string): Promise<Comment> => {
+    const { data, error } = await supabase
+        .from('comments')
+        .insert({ user_id: userId, post_id: postId, content })
+        .select('*, profiles(username, level, premium)')
+        .single();
+
+    if (error) {
+        console.error('Error creating comment:', error);
+        throw error;
+    }
+     if (!data) {
+        throw new Error('Failed to create comment. This might be due to database permissions.');
+    }
+    // FIX: Cast the return type to 'Comment' because the schema update resolves the type mismatch for 'profiles'.
+    return data as unknown as Comment;
+};
+
+/**
+ * Fetches all comments for a specific post.
+ * @param postId The ID of the post to fetch comments for.
+ * @returns A promise that resolves to an array of comments.
+ */
+export const fetchCommentsForPost = async (postId: string): Promise<Comment[]> => {
+    const { data, error } = await supabase
+        .from('comments')
+        .select('*, profiles(username, level, premium)')
+        .eq('post_id', postId)
+        .order('created_at', { ascending: true });
+
+    if (error) {
+        console.error('Error fetching comments:', error);
+        throw error;
+    }
+    // FIX: Cast the return type to 'Comment[]' because the schema update resolves the type mismatch for 'profiles'.
+    return (data as unknown as Comment[]) || [];
 };

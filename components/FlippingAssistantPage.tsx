@@ -50,18 +50,22 @@ const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue'; 
     )
 };
 
-const CollapsibleAnalysis: React.FC<{ justification: string }> = ({ justification }) => {
+const CollapsibleAnalysis: React.FC<{ justification: string, riskJustification: string }> = ({ justification, riskJustification }) => {
+    // Combine the risk assessment and the main justification for parsing
+    const fullJustification = `**Risk Assessment:** ${riskJustification}\n\n${justification}`;
+    
     // Regex to split the justification by sections that start with a bolded title (e.g., **Web Insight:**)
-    // It looks for two newlines followed by a bolded string, and splits before it.
-    const sections = justification.split(/\n\n(?=\*\*.+?\*\*)/);
+    const sections = fullJustification.split(/\n\n(?=\*\*.+?\*\*)/);
 
     if (sections.length <= 1) {
-        return <p className="text-sm text-gray-300 whitespace-pre-wrap">{justification}</p>;
+        return <p className="text-sm text-gray-300 whitespace-pre-wrap">{fullJustification}</p>;
     }
 
+    // The first part is always visible
     const firstPart = sections[0].trim();
+    
+    // The rest of the sections are collapsible
     const collapsibleParts = sections.slice(1).map(part => {
-        // Extracts the title (e.g., "Web Insight:") and the content that follows.
         const match = part.match(/\*\*(.+?)\*\*\s*([\s\S]*)/);
         if (match) {
             const title = match[1].trim();
@@ -92,7 +96,6 @@ const CollapsibleAnalysis: React.FC<{ justification: string }> = ({ justificatio
 
 const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () => void; allItems: Record<string, Item> }> = ({ suggestion, onSelect, allItems }) => {
     const [isWebSourcesOpen, setIsWebSourcesOpen] = useState(false);
-    const confidenceColor = suggestion.confidence === 'High' ? 'green' : suggestion.confidence === 'Medium' ? 'yellow' : 'red';
     const riskColor = suggestion.riskLevel === 'High' ? 'red' : suggestion.riskLevel === 'Medium' ? 'yellow' : 'green';
     const velocityColor = suggestion.flipVelocity === 'Very High' ? 'blue' : suggestion.flipVelocity === 'High' ? 'green' : suggestion.flipVelocity === 'Medium' ? 'yellow' : 'red';
     const validWebSources = suggestion.webSources?.filter(s => s.web?.uri && s.web?.title);
@@ -113,7 +116,6 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
                     <h3 className="text-xl font-bold text-white">{suggestion.itemName}</h3>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <Tag text={suggestion.flipVelocity} color={velocityColor} icon={ZapIcon} />
-                        <Tag text={suggestion.confidence} color={confidenceColor} />
                         <Tag text={suggestion.riskLevel} color={riskColor} />
                          {validWebSources && validWebSources.length > 0 && (
                             <div className="relative group">
@@ -126,6 +128,13 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
                         )}
                     </div>
                 </div>
+            </div>
+             <div className="mb-4">
+                <div className="flex justify-between items-center text-xs mb-1">
+                    <span className="font-semibold text-gray-400">Confidence</span>
+                    <span className="font-bold text-white">{suggestion.confidenceScore}%</span>
+                </div>
+                <ProgressBar progress={suggestion.confidenceScore} />
             </div>
             
             <div className="space-y-3 text-sm bg-gray-900/50 p-3 rounded-md">
@@ -145,7 +154,7 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
             
             <div className="mt-4 flex-grow">
                 <p className="text-xs font-semibold text-gray-400 mb-2 uppercase">AI Analysis</p>
-                <CollapsibleAnalysis justification={suggestion.justification} />
+                <CollapsibleAnalysis justification={suggestion.justification} riskJustification={suggestion.riskJustification} />
             </div>
 
             {validWebSources && validWebSources.length > 0 && (
@@ -379,38 +388,23 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                     if (!latest || !latest.high || !latest.low || !item.limit || item.limit <= 0 || latest.high < 1000 || !price24h) return null;
                     if (ignoreLowLimits && item.limit < LOW_LIMIT_THRESHOLD) return null;
 
-                    // --- Accurate Tax Calculation ---
                     const buyPrice = latest.high;
                     const sellPrice = latest.low;
-
-                    // Step 1: Preliminary check based on per-item tax. Filters out obviously bad flips.
                     const taxPerItem = calculateGeTax(item.name, sellPrice, 1);
                     if ((sellPrice - buyPrice - taxPerItem) <= 0) return null;
-
-                    // Step 2: Calculate the actual quantity we can flip based on budget and item limit.
                     const quantityToFlip = Math.min(Math.floor(parsedBudget / buyPrice), item.limit);
                     if (quantityToFlip <= 0) return null;
-
-                    // Step 3: Calculate the total tax for the entire transaction, respecting the 5m cap.
                     const totalTaxForFlip = calculateGeTax(item.name, sellPrice, quantityToFlip);
-
-                    // Step 4: Calculate the total potential profit for the entire flip.
                     const potentialProfit = (sellPrice * quantityToFlip) - (buyPrice * quantityToFlip) - totalTaxForFlip;
-
-                    // Step 5: Ensure the flip is still profitable after accurate tax calculation.
                     if (potentialProfit <= 0) return null;
-
-                    // Step 6: Calculate the true net margin per item.
                     const netMargin = potentialProfit / quantityToFlip;
-                    // --- End Tax Calculation ---
                     
                     const volume24hBuy = price24h.highPriceVolume;
                     const volume24hSell = price24h.lowPriceVolume;
 
-                    // --- Strict Liquidity Filtering ---
                     if (volume24hBuy < 100 || volume24hSell < 100) return null;
                     const liquidityRatio = volume24hSell / volume24hBuy;
-                    if (liquidityRatio < 0.25) return null; // Sell volume must be at least 25% of buy volume
+                    if (liquidityRatio < 0.25) return null;
 
                     const price1h = oneHourPrices[item.id];
                     const priceChange1h = (price1h?.avgHighPrice && latest.high) ? ((latest.high - price1h.avgHighPrice) / price1h.avgHighPrice) * 100 : 0;
@@ -426,7 +420,6 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                     };
                     const tradabilityTier = getTradabilityTier();
 
-                    // --- Strategy-based hard filtering ---
                     if (strategy === 'balanced' && (tradabilityTier === 'Fair' || tradabilityTier === 'Poor')) return null;
                     if (strategy !== 'balanced' && tradabilityTier === 'Poor') return null;
 
@@ -447,35 +440,22 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             setProgress(30);
 
             const sortedCandidates = candidates.sort((a, b) => {
-                 // Weighted scoring for each strategy
                  const score = (c: typeof candidates[0]) => {
                     let score = 0;
-                    const profitScore = Math.log(c.potentialProfit + 1) * 10; // Log scale for profit
-                    const velocityScore = Math.log(c.flipVelocityScore + 1) * 5; // Emphasize velocity
+                    const profitScore = Math.log(c.potentialProfit + 1) * 10;
+                    const velocityScore = Math.log(c.flipVelocityScore + 1) * 5;
                     const marginScore = c.netMarginPercentage * 2;
-                    
                     switch(strategy) {
-                        case 'high_margin':
-                            score = marginScore * 1.5 + profitScore + velocityScore;
-                            break;
-                        case 'dip_buys':
-                            // Higher score for bigger dips (more negative priceChange)
-                            score = (c.priceChange24h < 0 ? -c.priceChange24h * 2 : 0) + profitScore + velocityScore;
-                            break;
-                        case 'momentum_plays':
-                            // Higher score for bigger rises
-                            score = (c.priceChange24h > 0 ? c.priceChange24h * 2 : 0) + profitScore + velocityScore;
-                            break;
-                        case 'balanced':
-                        default:
-                            score = profitScore * 1.2 + velocityScore * 1.5 + marginScore;
-                            break;
+                        case 'high_margin': score = marginScore * 1.5 + profitScore + velocityScore; break;
+                        case 'dip_buys': score = (c.priceChange24h < 0 ? -c.priceChange24h * 2 : 0) + profitScore + velocityScore; break;
+                        case 'momentum_plays': score = (c.priceChange24h > 0 ? c.priceChange24h * 2 : 0) + profitScore + velocityScore; break;
+                        default: score = profitScore * 1.2 + velocityScore * 1.5 + marginScore; break;
                     }
                      return score;
                 }
                 return score(b) - score(a);
 
-            }).slice(0, 30); // Analyze top 30 qualified items
+            }).slice(0, 30);
 
             if (sortedCandidates.length === 0) {
                 throw new Error("No highly-tradeable flips found matching your criteria. Try a different strategy, a higher budget, or check back when market conditions change.");
@@ -483,7 +463,6 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             
             setStatusMessage('Fetching historical data for candidates...');
             setProgress(40);
-            // This logic can be kept as-is, it's good for adding trend data.
             const timeseriesResponses = await Promise.allSettled(
                 sortedCandidates.map(c => fetchTimeseries(c.id, '6h'))
             );
@@ -497,26 +476,26 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                 return { ...candidate, trend7d: '0.00' };
             });
 
-
             setStatusMessage('Performing primary AI analysis...');
             setProgress(60);
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             
-             const responseSchema = {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  itemId: { type: Type.NUMBER }, itemName: { type: Type.STRING },
-                  buyPrice: { type: Type.NUMBER }, sellPrice: { type: Type.NUMBER },
-                  netMarginPerItem: { type: Type.NUMBER }, potentialProfit: { type: Type.NUMBER },
-                  justification: { type: Type.STRING },
-                  confidence: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
-                  riskLevel: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
-                  flipVelocity: { type: Type.STRING, enum: ['Very High', 'High', 'Medium', 'Low'] },
+            const responseSchema = {
+                type: Type.ARRAY,
+                items: {
+                    type: Type.OBJECT,
+                    properties: {
+                        itemId: { type: Type.NUMBER }, itemName: { type: Type.STRING },
+                        buyPrice: { type: Type.NUMBER }, sellPrice: { type: Type.NUMBER },
+                        netMarginPerItem: { type: Type.NUMBER }, potentialProfit: { type: Type.NUMBER },
+                        justification: { type: Type.STRING },
+                        confidenceScore: { type: Type.NUMBER, description: "A numerical score from 0 to 100." },
+                        riskLevel: { type: Type.STRING, enum: ['High', 'Medium', 'Low'] },
+                        riskJustification: { type: Type.STRING, description: "A single sentence explaining the risk level." },
+                        flipVelocity: { type: Type.STRING, enum: ['Very High', 'High', 'Medium', 'Low'] },
+                    },
+                    required: ["itemId", "itemName", "buyPrice", "sellPrice", "netMarginPerItem", "potentialProfit", "justification", "confidenceScore", "riskLevel", "riskJustification", "flipVelocity"],
                 },
-                required: ["itemId", "itemName", "buyPrice", "sellPrice", "netMarginPerItem", "potentialProfit", "justification", "confidence", "riskLevel", "flipVelocity"],
-              },
             };
 
             const strategyDefinition = {
@@ -526,7 +505,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                 momentum_plays: "Identify items showing strong recent growth (positive trend7d) that are likely to continue rising. High velocity is key here."
             };
 
-            const prompt = `You are an expert market analyst for the video game Old School RuneScape, specializing in the Grand Exchange. Your goal is to identify the top 5 most profitable and liquid items to 'flip' based on my constraints. A profitable flip is useless if you can't buy or sell the item quickly.
+            const prompt = `You are an expert market analyst for the video game Old School RuneScape, specializing in the Grand Exchange. Your goal is to identify the top 5 most profitable and liquid items to 'flip' based on my constraints.
 
             My Constraints:
             - Budget: ${parsedBudget.toLocaleString()} gp.
@@ -535,16 +514,17 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             Key Data Points Explained:
             -   **flipVelocityScore**: CRITICAL. Measures how many times the item's buy limit turns over per day. Higher is better. A score over 50 is good, over 200 is excellent.
             -   **tradabilityTier**: CRITICAL. A summary of liquidity. 'Excellent' or 'Good' is required for safe flips.
-            -   **liquidityRatio**: Ratio of sell volume to buy volume. A value close to 1.0 is ideal, indicating a balanced market.
-            -   **trend7d**: The percentage price change over the last 7 days.
+            -   **liquidityRatio**: Ratio of sell volume to buy volume. A value close to 1.0 is ideal.
 
             Your Task:
-            1.  Review the data for each item. Prioritize items that align with my chosen strategy.
-            2.  Determine a 'riskLevel' (Low, Medium, High) based on tradabilityTier, volatility (price changes), and liquidityRatio. Low tradabilityTier MUST result in a High riskLevel.
-            3.  Determine a 'confidence' score (High, Medium, Low). High confidence requires Excellent/Good tradability and price patterns that support the strategy.
-            4.  Determine a 'flipVelocity' rating (Very High, High, Medium, Low) based *only* on the 'flipVelocityScore'. >200 is Very High, >50 is High, >10 is Medium, else Low.
-            5.  Write a concise 'justification' (2-3 sentences) explaining *why* it's a good *quick* flip that fits my strategy. You MUST reference the key data points (e.g., "Its excellent flip velocity and balanced market...").
-            6.  Return a JSON array of the top 5 suggestions, ranked from best to worst. Use the pre-calculated 'potentialProfit' and other values directly.
+            1.  Review the data, prioritizing items aligned with my strategy.
+            2.  For each of the top 5:
+                a.  **riskLevel**: Determine a 'riskLevel' (Low, Medium, High) based on tradabilityTier, price volatility (priceChange fields), and liquidityRatio. Low tradabilityTier MUST result in a High riskLevel.
+                b.  **riskJustification**: Write a single sentence explaining the riskLevel. E.g., "Low risk due to excellent trade volume and stable price trends."
+                c.  **confidenceScore**: Provide a numerical score from 0 to 100 representing your confidence in this flip's success for the chosen strategy. High confidence requires Excellent/Good tradability and price patterns supporting the strategy.
+                d.  **flipVelocity**: Rate this from 'Very High' to 'Low' based *only* on the 'flipVelocityScore'. >200 is Very High, >50 is High, >10 is Medium, else Low.
+                e.  **justification**: Write a concise 'justification' (2-3 sentences) explaining *why* it's a good flip. You MUST reference key data points.
+            3.  Return a JSON array of the top 5 suggestions, ranked from best to worst. Use the pre-calculated 'potentialProfit' and other values directly.
 
             DATA: ${JSON.stringify(candidatesWithHistory)}`;
 
@@ -563,7 +543,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                  setStatusMessage('Enhancing top result with Google Search...');
                  setProgress(80);
                  const topSuggestion = parsedSuggestions[0];
-                 const groundingPrompt = `In Old School RuneScape, what recent news, updates, or community trends might affect the price of a '${topSuggestion.itemName}'? Summarize relevant information.`;
+                 const groundingPrompt = `In Old School RuneScape, what recent news, updates, or community trends might affect the price of a '${topSuggestion.itemName}'? Summarize relevant information concisely.`;
                  
                  const groundingResponse = await ai.models.generateContent({
                     model: "gemini-2.5-flash",
@@ -760,7 +740,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                                     aria-hidden="true"
                                     className={`${
                                         ignoreLowLimits ? 'translate-x-5' : 'translate-x-0'
-                                    } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                                    } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
                                     />
                                 </button>
                             </div>

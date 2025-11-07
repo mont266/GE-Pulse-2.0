@@ -6,9 +6,14 @@ import { VolumeChart } from './VolumeChart';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
-import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon } from './icons/Icons';
+import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon, SlidersIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl } from '../utils/image';
 import { TooltipWrapper } from './ui/Tooltip';
+import { SkeletonChart } from './ui/Skeleton';
+import { useLocalStorage } from '../hooks/useLocalStorage';
+import { ChartSettingsModal } from './ChartSettingsModal';
+import { AlertSettingsModal } from './AlertSettingsModal';
+import { FREE_USER_ALERT_LIMIT } from '../constants';
 
 interface ItemViewProps {
   item: Item;
@@ -17,12 +22,14 @@ interface ItemViewProps {
   isLoading: boolean;
   onBack: () => void;
   onRefresh: (item: Item, timeStep: '5m' | '1h' | '6h') => void;
+  onRefreshPrices: () => Promise<void>;
   watchlist: number[];
   toggleWatchlist: (itemId: number) => void;
+  pendingWatchlistAdds: Set<number>;
   alerts: PriceAlert[];
   setAlerts: React.Dispatch<React.SetStateAction<PriceAlert[]>>;
   onOpenAddInvestmentModal: (item: Item) => void;
-  onSetAlertActivity: () => void;
+  onSetAlertActivity: (priceType: 'high' | 'low') => void;
   profile: (Profile & { email: string | null; }) | null;
   onSpendToken: () => Promise<void>;
   oneHourPrices: Record<string, AggregatePrice>;
@@ -33,6 +40,47 @@ type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y';
 type ApiTimeStep = '5m' | '1h' | '6h';
 
 const timeViewOptions: TimeView[] = ['1H', '6H', '1D', '1W', '1M', '6M', '1Y'];
+const AUTO_REFRESH_SECONDS = 30;
+
+// Custom hook to animate a number value smoothly.
+const useNumberTicker = (value: number, duration: number = 750) => {
+    const [displayValue, setDisplayValue] = useState(value);
+    const prevValueRef = useRef(value);
+
+    useEffect(() => {
+        const startValue = prevValueRef.current;
+        const endValue = value;
+        prevValueRef.current = value;
+
+        if (startValue === endValue) {
+            if (displayValue !== endValue) setDisplayValue(endValue);
+            return;
+        }
+
+        let startTime: number;
+        const animate = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const progress = Math.min((timestamp - startTime) / duration, 1);
+            // Ease-out cubic function for a smooth slowdown
+            const easedProgress = 1 - Math.pow(1 - progress, 3);
+            
+            const newDisplayValue = startValue + (endValue - startValue) * easedProgress;
+            setDisplayValue(newDisplayValue);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                setDisplayValue(endValue);
+            }
+        };
+
+        requestAnimationFrame(animate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [value, duration]);
+
+    return displayValue;
+};
+
 
 const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue' }> = ({ text, color }) => {
     const colors = {
@@ -48,39 +96,146 @@ const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue' }
     )
 };
 
+const CountdownCircle: React.FC<{ countdown: number; duration: number }> = ({ countdown, duration }) => {
+  const radius = 18;
+  const circumference = 2 * Math.PI * radius;
+  const progress = (countdown / duration) * circumference;
 
-export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, watchlist, toggleWatchlist, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices }) => {
+  return (
+    <div className="relative w-9 h-9">
+      <svg className="w-full h-full" viewBox="0 0 40 40">
+        <circle
+          className="text-gray-700"
+          strokeWidth="4"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="20"
+          cy="20"
+        />
+        <circle
+          className="text-emerald-500"
+          strokeWidth="4"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - progress}
+          strokeLinecap="round"
+          stroke="currentColor"
+          fill="transparent"
+          r={radius}
+          cx="20"
+          cy="20"
+          style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%', transition: 'stroke-dashoffset 1s linear' }}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+         <RefreshCwIcon className="w-4 h-4 text-emerald-400" />
+      </div>
+    </div>
+  );
+};
+
+
+export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, onRefreshPrices, watchlist, toggleWatchlist, pendingWatchlistAdds, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices }) => {
   const [activeTimeView, setActiveTimeView] = useState<TimeView>('1W');
-  const [notification, setNotification] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(true);
-  const [countdown, setCountdown] = useState(300); // 5 minutes in seconds
+  const [countdown, setCountdown] = useState(AUTO_REFRESH_SECONDS);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const [shakeBellIcon, setShakeBellIcon] = useState(false);
+  
+  // Chart state
+  const [chartFlash, setChartFlash] = useState<'up' | 'down' | 'neutral' | null>(null);
+  const [prevLatestPrice, setPrevLatestPrice] = useState<LatestPrice | null>(null);
+  const isInitialLoad = useRef(true);
+
+  // Modals State
+  const [isChartSettingsModalOpen, setIsChartSettingsModalOpen] = useState(false);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [chartSettings, setChartSettings] = useLocalStorage('chartSettings', { showAverageLine: true });
 
   // AI Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<ItemAnalysis | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Star animation state
+  const isWatched = watchlist.includes(item.id);
+  const prevIsWatched = useRef(isWatched);
+  const [isAnimatingStar, setIsAnimatingStar] = useState(false);
+
+  // --- Price Fluctuation Animation State ---
+  const [lastValidFluctuation, setLastValidFluctuation] = useState<{ absolute: number; percent: number } | null>(null);
+  
+  // Effect to manage initial load state for chart animations
+  useEffect(() => {
+    if (isLoading) {
+      isInitialLoad.current = true; // Reset on new item load
+    } else {
+      // After loading finishes, wait for the animation duration before disabling it for subsequent updates.
+      const timer = setTimeout(() => {
+        isInitialLoad.current = false;
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
+
+  useEffect(() => {
+    // Trigger animation only when adding to watchlist (isWatched goes from false to true)
+    if (isWatched && !prevIsWatched.current) {
+      setIsAnimatingStar(true);
+      const timer = setTimeout(() => setIsAnimatingStar(false), 300); // Match animation duration
+      return () => clearTimeout(timer);
+    }
+    prevIsWatched.current = isWatched;
+  }, [isWatched]);
+  
+  const handleRefresh = async () => {
+    setPrevLatestPrice(latestPrice); // Store current price before fetching new one
+    await Promise.all([
+        onRefresh(item, timeViewToApiTimeStep(activeTimeView)),
+        onRefreshPrices()
+    ]);
+  };
+
   // Effect for countdown timer tick
   useEffect(() => {
-    if (!isAutoRefreshEnabled) {
-      return;
-    }
+    if (!isAutoRefreshEnabled) return;
     const intervalId = window.setInterval(() => {
       setCountdown(prevCountdown => prevCountdown > 0 ? prevCountdown - 1 : 0);
     }, 1000);
-
     return () => window.clearInterval(intervalId);
   }, [isAutoRefreshEnabled]);
 
   // Effect to trigger refresh when countdown reaches zero
   useEffect(() => {
     if (isAutoRefreshEnabled && countdown <= 0) {
-      onRefresh(item, timeViewToApiTimeStep(activeTimeView));
-      setCountdown(300); // Reset timer
+      handleRefresh();
+      setCountdown(AUTO_REFRESH_SECONDS); // Reset timer
     }
-  }, [countdown, isAutoRefreshEnabled, item, activeTimeView, onRefresh]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown, isAutoRefreshEnabled]);
+  
+  // Effect to trigger flash animation on price change
+  useEffect(() => {
+    if (!isInitialLoad.current && prevLatestPrice && latestPrice?.high != null && prevLatestPrice.high != null) {
+        if (latestPrice.high > prevLatestPrice.high) {
+            setChartFlash('up');
+        } else if (latestPrice.high < prevLatestPrice.high) {
+            setChartFlash('down');
+        } else {
+            setChartFlash('neutral');
+        }
+    }
+  }, [latestPrice, prevLatestPrice]);
+  
+  // Effect to reset flash state after animation completes
+  useEffect(() => {
+    if (chartFlash) {
+        const timer = setTimeout(() => setChartFlash(null), 1500); // Corresponds to animation duration
+        return () => clearTimeout(timer);
+    }
+  }, [chartFlash]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -154,44 +309,68 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
       absolute: absoluteChange,
       percent: percentageChange,
     };
-  }, [filteredTimeseriesData, latestPrice, isLoading, activeTimeView]);
+  }, [filteredTimeseriesData, latestPrice, isLoading]);
 
-  const isWatched = watchlist.includes(item.id);
+  // Update the persistent state whenever we get new valid fluctuation data
+  useEffect(() => {
+      if (priceFluctuation) {
+          setLastValidFluctuation(priceFluctuation);
+      }
+  }, [priceFluctuation]);
+  
+  // Use the latest data if available, otherwise fall back to the last known good data to prevent flickering
+  const displayFluctuation = priceFluctuation ?? lastValidFluctuation;
+
+  // Apply the number ticker animation to the displayed values
+  const animatedAbsolute = useNumberTicker(displayFluctuation?.absolute ?? 0);
+  const animatedPercent = useNumberTicker(displayFluctuation?.percent ?? 0);
+
   const existingAlert = alerts.find(a => a.itemId === item.id);
 
   const handleTimeViewChange = (timeView: TimeView) => {
     setActiveTimeView(timeView);
     onRefresh(item, timeViewToApiTimeStep(timeView));
     if (isAutoRefreshEnabled) {
-      setCountdown(300);
+      setCountdown(AUTO_REFRESH_SECONDS);
     }
     setIsDropdownOpen(false);
   };
   
-  const handleSetAlert = () => {
-    const currentPrice = latestPrice?.high ?? 0;
-    if(currentPrice > 0) {
-        if (existingAlert) {
-            setAlerts(prev => prev.filter(a => a.itemId !== item.id));
-            setNotification(`Alert for ${item.name} removed.`);
-        } else {
-            const newAlert: PriceAlert = {
-                itemId: item.id,
-                targetPrice: currentPrice,
-                condition: 'below'
-            };
-            setAlerts(prev => [...prev.filter(a => a.itemId !== item.id), newAlert]);
-            onSetAlertActivity();
-            setNotification(`Alert set for ${item.name}! You earned XP.`);
-        }
-        setTimeout(() => setNotification(null), 3000);
+  const handleOpenAlertModal = () => {
+    if (!profile?.premium && !existingAlert && alerts.length >= FREE_USER_ALERT_LIMIT) {
+        setNotification({ message: 'Free users are limited to 10 alerts. Upgrade for unlimited.', type: 'error' });
+        setShakeBellIcon(true);
+        setTimeout(() => setShakeBellIcon(false), 820);
+    } else {
+        setIsAlertModalOpen(true);
     }
   };
 
+  const handleSaveAlert = (newAlert: PriceAlert) => {
+    const isNew = !existingAlert;
+    if (isNew) {
+      onSetAlertActivity(newAlert.priceType);
+    }
+    setAlerts(prev => [...prev.filter(a => a.itemId !== newAlert.itemId), newAlert]);
+    setNotification({
+      message: `Alert ${isNew ? 'set' : 'updated'} for ${item.name}!`,
+      type: 'success'
+    });
+    setTimeout(() => setNotification(null), 3000);
+    setIsAlertModalOpen(false);
+  };
+
+  const handleRemoveAlert = (itemId: number) => {
+    setAlerts(prev => prev.filter(a => a.itemId !== itemId));
+    setNotification({ message: `Alert for ${item.name} removed.`, type: 'success' });
+    setTimeout(() => setNotification(null), 3000);
+    setIsAlertModalOpen(false);
+  };
+
   const handleManualRefresh = () => {
-    onRefresh(item, timeViewToApiTimeStep(activeTimeView));
+    handleRefresh();
     if (isAutoRefreshEnabled) {
-      setCountdown(300);
+      setCountdown(AUTO_REFRESH_SECONDS);
     }
   };
 
@@ -200,10 +379,10 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
     const shareUrl = `${baseUrl}#/item/${item.id}`;
     try {
         await navigator.clipboard.writeText(shareUrl);
-        setNotification('Share link copied to clipboard!');
+        setNotification({ message: 'Share link copied to clipboard!', type: 'success' });
     } catch (err) {
         console.error('Failed to copy text: ', err);
-        setNotification('Failed to copy link.');
+        setNotification({ message: 'Failed to copy link.', type: 'error' });
     }
     setTimeout(() => setNotification(null), 3000);
   };
@@ -212,7 +391,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
     setIsAutoRefreshEnabled(prev => {
       const newState = !prev;
       if (newState) {
-        setCountdown(300);
+        setCountdown(AUTO_REFRESH_SECONDS);
       }
       return newState;
     });
@@ -287,19 +466,31 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
     }
   };
   
-  const formatCountdown = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
-  };
-
+  const isPendingAdd = pendingWatchlistAdds.has(item.id);
 
   return (
     <div>
       {notification && (
-        <div className="fixed top-5 right-5 bg-emerald-500 text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in-down">
-          {notification}
+        <div className={`fixed top-5 right-5 ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
+          {notification.message}
         </div>
+      )}
+      {isChartSettingsModalOpen && (
+        <ChartSettingsModal
+            settings={chartSettings}
+            onClose={() => setIsChartSettingsModalOpen(false)}
+            onSettingsChange={setChartSettings}
+        />
+      )}
+      {isAlertModalOpen && (
+        <AlertSettingsModal
+            item={item}
+            latestPrice={latestPrice}
+            existingAlert={existingAlert ?? null}
+            onClose={() => setIsAlertModalOpen(false)}
+            onSave={handleSaveAlert}
+            onRemove={handleRemoveAlert}
+        />
       )}
       <div className="flex items-center gap-4 mb-6">
         <Button onClick={onBack} variant="ghost" size="icon">
@@ -322,10 +513,10 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
             <Button onClick={() => onOpenAddInvestmentModal(item)} variant="ghost" size="icon" className='text-gray-400 hover:text-emerald-400'>
               <BriefcaseIcon className="w-6 h-6" />
             </Button>
-            <Button onClick={() => toggleWatchlist(item.id)} variant="ghost" size="icon" className={isWatched ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'}>
-              <StarIcon className="w-6 h-6" />
+            <Button onClick={() => toggleWatchlist(item.id)} variant="ghost" size="icon" className={`${isWatched ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'} ${isPendingAdd ? 'pulse-bg rounded-full' : ''}`}>
+              <StarIcon className={`w-6 h-6 ${isAnimatingStar ? 'animate-pop' : ''}`} />
             </Button>
-            <Button onClick={handleSetAlert} variant="ghost" size="icon" className={existingAlert ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400'}>
+            <Button onClick={handleOpenAlertModal} variant="ghost" size="icon" className={`${existingAlert ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400'} ${shakeBellIcon ? 'animate-shake' : ''}`}>
                 <BellIcon className="w-6 h-6" />
             </Button>
         </div>
@@ -333,7 +524,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <Card>
+          <Card className="relative">
             <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
                <div className="flex-1 pr-4 min-w-[200px]">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
@@ -350,18 +541,18 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                     </p>
                   </div>
                 </div>
-                {priceFluctuation && (
-                  <div className="mt-2">
-                    <p className={`text-base font-semibold ${
-                      priceFluctuation.absolute > 0 ? 'text-emerald-400' :
-                      priceFluctuation.absolute < 0 ? 'text-red-400' : 'text-gray-400'
-                    }`}>
-                      {priceFluctuation.absolute >= 0 ? '+' : ''}
-                      {priceFluctuation.absolute.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                      <span className="ml-1">({priceFluctuation.percent >= 0 ? '+' : ''}{priceFluctuation.percent.toFixed(2)}%)</span>
-                      <span className="text-sm font-normal text-gray-400 ml-2">High price change vs. {activeTimeView} ago</span>
-                    </p>
-                  </div>
+                {displayFluctuation && (
+                    <div className="mt-2">
+                        <p className={`text-base font-semibold ${
+                            animatedAbsolute > 0 ? 'text-emerald-400' :
+                            animatedAbsolute < 0 ? 'text-red-400' : 'text-gray-400'
+                        }`}>
+                            {animatedAbsolute >= 0 ? '+' : ''}
+                            {Math.round(animatedAbsolute).toLocaleString()}
+                            <span className="ml-1">({animatedPercent >= 0 ? '+' : ''}{animatedPercent.toFixed(2)}%)</span>
+                            <span className="text-sm font-normal text-gray-400 ml-2">High price change vs. {activeTimeView} ago</span>
+                        </p>
+                    </div>
                 )}
               </div>
               <div className="flex items-center gap-x-4 gap-y-2 flex-wrap justify-end">
@@ -393,19 +584,17 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                         </div>
                     )}
                 </div>
-                <Button onClick={handleManualRefresh} variant="ghost" size="icon" disabled={isLoading || isAutoRefreshEnabled} className="w-9 h-9">
-                    {isLoading && !isAutoRefreshEnabled ? (
-                      <Loader size="sm" />
-                    ) : (
-                      <RefreshCwIcon className={`w-4 h-4 ${isAutoRefreshEnabled ? 'text-emerald-400' : ''} ${isLoading && isAutoRefreshEnabled ? 'animate-spin' : ''}`} />
-                    )}
+                <Button onClick={() => setIsChartSettingsModalOpen(true)} variant="secondary" size="icon" className="w-9 h-9">
+                    <SlidersIcon className="w-5 h-5" />
                 </Button>
+                {isAutoRefreshEnabled ? (
+                    <CountdownCircle countdown={countdown} duration={AUTO_REFRESH_SECONDS} />
+                ) : (
+                    <Button onClick={handleManualRefresh} variant="ghost" size="icon" disabled={isLoading} className="w-9 h-9">
+                        {isLoading ? <Loader size="sm" /> : <RefreshCwIcon className="w-4 h-4" />}
+                    </Button>
+                )}
                 <div className="flex items-center gap-2">
-                  {isAutoRefreshEnabled && (
-                    <div className="text-sm font-mono text-emerald-300 bg-gray-700/50 rounded-md px-2 py-1 w-[60px] text-center">
-                      {formatCountdown(countdown)}
-                    </div>
-                  )}
                   <label htmlFor="auto-refresh-toggle" className="text-sm text-gray-300 cursor-pointer select-none">
                       Auto
                   </label>
@@ -422,27 +611,37 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                       aria-hidden="true"
                       className={`${
                           isAutoRefreshEnabled ? 'translate-x-5' : 'translate-x-0'
-                      } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out`}
+                      } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
                       />
                   </button>
                 </div>
               </div>
             </div>
             <div className="h-[28rem]">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full"><Loader /></div>
+              {isLoading && isInitialLoad.current ? (
+                <SkeletonChart />
               ) : (
-                <div className="h-full flex flex-col">
+                <div className="h-full flex flex-col animate-fade-in">
                   <div className="flex-grow h-2/3">
-                    <PriceChart data={filteredTimeseriesData} />
+                    <PriceChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} showAverageLine={chartSettings.showAverageLine} />
                   </div>
                   <div className="flex-grow h-1/3 pt-4 border-t border-gray-700/50 mt-4">
                     <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
-                    <VolumeChart data={filteredTimeseriesData} />
+                    <VolumeChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} />
                   </div>
                 </div>
               )}
             </div>
+            {chartFlash && (
+              <div
+                key={chartFlash + Date.now()} // Force re-animation
+                className={`absolute inset-0 rounded-lg pointer-events-none ${
+                  chartFlash === 'up' ? 'animate-glow-green' :
+                  chartFlash === 'down' ? 'animate-glow-red' :
+                  'animate-glow-white'
+                }`}
+              ></div>
+            )}
           </Card>
            {(isAnalyzing || analysisResult || aiError) && (
                 <Card className="mt-6">

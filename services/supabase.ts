@@ -49,6 +49,43 @@ export type Database = {
         }
         Relationships: []
       }
+      comments: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comments_post_id_fkey"
+            columns: ["post_id"]
+            referencedRelation: "posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comments_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       investments: {
         Row: {
           created_at: string
@@ -95,6 +132,40 @@ export type Database = {
           }
         ]
       }
+      posts: {
+        Row: {
+          content: string | null
+          created_at: string
+          flip_data: Json | null
+          id: string
+          title: string | null
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          flip_data?: Json | null
+          id?: string
+          title?: string | null
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          flip_data?: Json | null
+          id?: string
+          title?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "posts_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       profiles: {
         Row: {
           id: string
@@ -102,6 +173,8 @@ export type Database = {
           developer: boolean
           beta_tester: boolean
           banned: boolean
+          // FIX: Add missing 'premium' column to align with application types and queries.
+          premium: boolean
           xp: number
           level: number
           login_streak: number
@@ -115,6 +188,8 @@ export type Database = {
           developer?: boolean
           beta_tester?: boolean
           banned?: boolean
+          // FIX: Add missing 'premium' column to align with application types and queries.
+          premium?: boolean
           xp?: number
           level?: number
           login_streak?: number
@@ -128,6 +203,8 @@ export type Database = {
           developer?: boolean
           beta_tester?: boolean
           banned?: boolean
+          // FIX: Add missing 'premium' column to align with application types and queries.
+          premium?: boolean
           xp?: number
           level?: number
           login_streak?: number
@@ -250,7 +327,7 @@ export type Database = {
           Returns: Json
       }
       record_activity: {
-          Args: { p_user_id: string, p_activity_type: 'watchlist_add' | 'alert_set' }
+          Args: { p_user_id: string, p_activity_type: 'watchlist_add' | 'alert_set_high' | 'alert_set_low' }
           Returns: Json
       }
       process_closed_trade: {

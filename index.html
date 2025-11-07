@@ -22,6 +22,125 @@
       ::-webkit-scrollbar-thumb:hover {
         background: #6b7280; /* bg-gray-500 */
       }
+
+      /* Animation for watchlist star icon */
+      @keyframes pop {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.3); }
+        100% { transform: scale(1); }
+      }
+      .animate-pop {
+        animation: pop 0.3s ease-in-out;
+      }
+
+      /* Bouncy transition for toggle switches */
+      .transition-bounce {
+        transition-timing-function: cubic-bezier(0.68, -0.55, 0.27, 1.55);
+      }
+
+      /* Shimmer for Skeleton Loaders */
+      @keyframes shimmer-bg {
+        0% { background-position: -1000px 0; }
+        100% { background-position: 1000px 0; }
+      }
+      .shimmer-bg {
+        animation: shimmer-bg 2s linear infinite;
+        background: linear-gradient(to right, #2d3748 4%, #374151 25%, #2d3748 36%);
+        background-size: 1000px 100%;
+      }
+
+      /* Pulsing Dot for Live Price */
+      @keyframes pulse-dot {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.5); opacity: 0.7; }
+      }
+      .pulse-dot {
+        animation: pulse-dot 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+      }
+
+      /* Pulsing background for optimistic UI */
+      @keyframes pulse-bg {
+        0%, 100% { background-color: transparent; }
+        50% { background-color: rgba(252, 211, 77, 0.2); } /* yellow-400 with opacity */
+      }
+      .pulse-bg {
+        animation: pulse-bg 1.5s ease-in-out infinite;
+      }
+
+      /* Price Flash Animations */
+      @keyframes flash-green {
+        0%, 100% { background-color: transparent; }
+        50% { background-color: rgba(16, 185, 129, 0.3); } /* emerald-500 with opacity */
+      }
+      .flash-green {
+        animation: flash-green 1s ease-in-out;
+      }
+
+      @keyframes flash-red {
+        0%, 100% { background-color: transparent; }
+        50% { background-color: rgba(248, 113, 113, 0.3); } /* red-400 with opacity */
+      }
+      .flash-red {
+        animation: flash-red 1s ease-in-out;
+      }
+      
+      /* Chart Glow-and-Fade Animations */
+      @keyframes glow-and-fade-green {
+        0%   { background-color: rgba(16, 185, 129, 0); }
+        20%  { background-color: rgba(16, 185, 129, 0.25); }
+        100% { background-color: rgba(16, 185, 129, 0); }
+      }
+      .animate-glow-green {
+        animation: glow-and-fade-green 1.5s ease-out forwards;
+      }
+
+      @keyframes glow-and-fade-red {
+        0%   { background-color: rgba(248, 113, 113, 0); }
+        20%  { background-color: rgba(248, 113, 113, 0.25); }
+        100% { background-color: rgba(248, 113, 113, 0); }
+      }
+      .animate-glow-red {
+        animation: glow-and-fade-red 1.5s ease-out forwards;
+      }
+
+      @keyframes glow-and-fade-white {
+        0%   { background-color: rgba(236, 239, 241, 0); }
+        20%  { background-color: rgba(236, 239, 241, 0.1); }
+        100% { background-color: rgba(236, 239, 241, 0); }
+      }
+      .animate-glow-white {
+        animation: glow-and-fade-white 1.5s ease-out forwards;
+      }
+
+      /* Button Shake Animation */
+      @keyframes shake {
+        10%, 90% { transform: translate3d(-1px, 0, 0); }
+        20%, 80% { transform: translate3d(2px, 0, 0); }
+        30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+        40%, 60% { transform: translate3d(4px, 0, 0); }
+      }
+      .animate-shake {
+        animation: shake 0.82s cubic-bezier(.36,.07,.19,.97) both;
+      }
+
+      /* Staggered List Animation */
+      @keyframes fade-slide-in {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-slide-in {
+        animation: fade-slide-in 0.5s ease-out forwards;
+        opacity: 0; /* Initially hidden */
+      }
+      
+      /* Simple Fade-in Animation */
+      @keyframes fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .animate-fade-in {
+        animation: fade-in 0.5s ease-out forwards;
+      }
     </style>
   <script type="importmap">
 {

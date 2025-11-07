@@ -38,6 +38,7 @@ export interface PriceAlert {
   itemId: number;
   targetPrice: number;
   condition: 'above' | 'below';
+  priceType: 'high' | 'low';
 }
 
 export interface Profile {
@@ -121,10 +122,11 @@ export interface FlippingSuggestion {
     buyPrice: number;
     sellPrice: number;
     netMarginPerItem: number;
-    potentialProfit: number; // Renamed for clarity
+    potentialProfit: number;
     justification: string;
-    confidence: 'High' | 'Medium' | 'Low';
+    confidenceScore: number; // Numerical score from 0-100
     riskLevel: 'High' | 'Medium' | 'Low';
+    riskJustification: string; // Single sentence explaining the risk
     flipVelocity: 'Very High' | 'High' | 'Medium' | 'Low';
     webSources?: {
       web?: {
@@ -150,4 +152,43 @@ export interface ItemAnalysis {
     confidence: 'High' | 'Medium' | 'Low';
     risk: 'High' | 'Medium' | 'Low';
     analysisText: string;
+}
+
+// --- Community Feed Types ---
+export interface FlipData {
+  item_id: number;
+  item_name: string;
+  quantity: number;
+  purchase_price: number;
+  sell_price: number;
+  profit: number;
+  roi: number; // Return on Investment
+}
+
+export interface Post {
+  id: string;
+  user_id: string;
+  created_at: string;
+  title: string | null;
+  content: string | null;
+  flip_data: FlipData | null;
+  profiles: { // For author info
+    username: string | null;
+    level: number;
+    premium: boolean;
+  };
+  comment_count: number;
+}
+
+export interface Comment {
+  id: string;
+  user_id: string;
+  post_id: string;
+  content: string;
+  created_at: string;
+  profiles: { // For author info
+    username: string | null;
+    level: number;
+    premium: boolean;
+  };
 }

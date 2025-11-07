@@ -244,14 +244,14 @@ export const HomePage: React.FC<HomePageProps> = ({ items, onSelectItem, latestP
 
   return (
     <div className="w-full max-w-6xl mx-auto">
-      <div className="sticky top-0 z-10 bg-gray-900 pt-4 pb-6 relative mb-8">
+      <div className="sticky top-0 z-10 bg-gray-900 pt-4 md:pt-8 pb-6 mb-8">
         <input
           type="text"
           placeholder="Search for an item (e.g., 'Abyssal whip')"
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="w-full p-4 pr-16 bg-gray-800 border border-gray-700 rounded-lg text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:outline-none transition"
+          className="w-full p-4 pr-16 bg-gray-800 border border-gray-700 rounded-lg text-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-emerald-500 focus:shadow-[0_0_20px_rgba(16,185,129,0.5)] focus:outline-none transition-all duration-300"
           aria-autocomplete="list"
           aria-controls="search-results"
           aria-activedescendant={highlightedIndex >= 0 ? `search-item-${filteredItems[highlightedIndex]?.id}` : undefined}
