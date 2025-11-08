@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -227,6 +228,9 @@ export default function App() {
   // --- Fetch Top Movers Data ---
   useEffect(() => {
       const loadMoversData = async () => {
+          // This effect should only fetch data if it hasn't been fetched yet.
+          // By checking the state *inside* the effect but not including the state
+          // in the dependency array, we avoid re-fetching when the state is populated.
           if ((currentView === 'home' || currentView === 'market' || currentView === 'assistant' || currentView === 'item') && (Object.keys(oneHourPrices).length === 0 || Object.keys(twentyFourHourPrices).length === 0)) {
               setIsMoversLoading(true);
               setError(null);
@@ -246,7 +250,7 @@ export default function App() {
           }
       };
       loadMoversData();
-  }, [currentView, oneHourPrices, twentyFourHourPrices]);
+  }, [currentView]); // FIX: Removed oneHourPrices and twentyFourHourPrices from dependencies to prevent re-renders from re-triggering the effect unnecessarily and causing a loading state lock.
 
 
   useEffect(() => {

@@ -52,7 +52,7 @@ export const AlertsPage: React.FC<AlertsPageProps> = ({ alerts, setAlerts, items
   }
 
   return (
-    <div>
+    <div className="pt-6 md:pt-8">
       {notification && (
         <div className={`fixed top-5 right-5 ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
           {notification.message}

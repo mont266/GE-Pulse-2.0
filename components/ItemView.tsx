@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Item, TimeseriesData, LatestPrice, PriceAlert, Profile, AggregatePrice, ItemAnalysis } from '../types';
@@ -517,7 +518,8 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
 
         Return the entire response as a single JSON object.`;
 
-        const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY || import.meta.env.VITE_GEMINI_API_KEY) as string });
+        // FIX: Adhere to Gemini API guidelines by exclusively using `process.env.API_KEY` for the API key.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
         const responseSchema = {
             type: Type.OBJECT,

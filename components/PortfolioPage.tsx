@@ -337,7 +337,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
     }
     
     return (
-        <div>
+        <div className="pt-6 md:pt-8">
             {shareNotification && (
                 <div className={`fixed top-5 right-5 ${shareNotification.includes("Error") ? 'bg-red-500' : 'bg-emerald-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
                     {shareNotification}

@@ -232,7 +232,7 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ profile, viewerProfile
       {isAchievementsModalOpen && (
         <AchievementsModal profile={profile} onClose={() => setIsAchievementsModalOpen(false)} />
       )}
-      <div>
+      <div className="pt-6 md:pt-8">
         <div className="flex items-center gap-4 mb-8">
           <Button onClick={onBack} variant="ghost" size="icon" className="mr-2 self-start">
               <ArrowLeftIcon className="w-6 h-6" />

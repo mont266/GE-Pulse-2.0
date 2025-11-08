@@ -17,7 +17,7 @@ interface WatchlistProps {
 export const Watchlist: React.FC<WatchlistProps> = ({ items, onSelectItem, latestPrices, prevLatestPrices, timeseries, toggleWatchlist, isLoading }) => {
   if (isLoading) {
     return (
-      <div>
+      <div className="pt-6 md:pt-8">
         <h2 className="text-3xl font-bold text-white mb-6">Your Watchlist</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -37,7 +37,7 @@ export const Watchlist: React.FC<WatchlistProps> = ({ items, onSelectItem, lates
   }
 
   return (
-    <div>
+    <div className="pt-6 md:pt-8">
       <h2 className="text-3xl font-bold text-white mb-6">Your Watchlist</h2>
       <WatchlistGrid 
         items={items} 

@@ -105,7 +105,7 @@ export const StatsPage: React.FC<StatsPageProps> = () => {
     };
 
     return (
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto pt-6 md:pt-8">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <BarChartIcon className="w-10 h-10 text-emerald-400" />

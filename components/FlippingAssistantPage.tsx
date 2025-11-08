@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Item, LatestPrice, AggregatePrice, FlippingSuggestion, Profile, HistoricAnalysis } from '../types';
@@ -544,7 +545,8 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
 
             setStatusMessage('Performing primary AI analysis...');
             setProgress(60);
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY || import.meta.env.VITE_GEMINI_API_KEY) as string });
+            // FIX: Adhere to Gemini API guidelines by exclusively using `process.env.API_KEY` for the API key.
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             
             const responseSchema = {
                 type: Type.ARRAY,
@@ -621,7 +623,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
                  const webInsight = groundingResponse.text;
                  const sources = groundingResponse.candidates?.[0]?.groundingMetadata?.groundingChunks;
                  
-                 if (webInsight && webInsight.length > 10 && !webInsight.toLowerCase().includes("i am not able to")) {
+                 if (webInsight && webInsight.length > 10 && !webInsight.toLowerCase().includes("i am not able")) {
                      topSuggestion.justification += `\n\n**Web Insight:** ${webInsight}`;
                  }
                  if (sources && sources.length > 0) {
@@ -658,7 +660,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
 
     if (selectedHistoryItem) {
         return (
-            <div className="max-w-6xl mx-auto">
+            <div className="max-w-6xl mx-auto pt-6 md:pt-8">
                 <div className="flex items-center justify-between mb-4 flex-wrap gap-4">
                     <div>
                          <h2 className="text-2xl font-bold text-white">Viewing Past Analysis</h2>
@@ -699,7 +701,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
     }
 
     return (
-        <div className="max-w-6xl mx-auto">
+        <div className="max-w-6xl mx-auto pt-6 md:pt-8">
             <div className="text-center mb-8">
                 <BotIcon className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
                 <h1 className="text-4xl font-bold text-white">AI Flipping Assistant</h1>
