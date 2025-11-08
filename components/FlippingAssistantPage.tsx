@@ -31,23 +31,43 @@ const FUN_STATUS_MESSAGES = [
     "Detecting high-velocity trade patterns...",
     "Haggling with a Gnome for better rates...",
     "Checking for market manipulation...",
+    "Scouring the WGS for price anomalies...",
+    "Calibrating the profit-o-meter...",
+    "Polishing the crystal ball of finance...",
+    "Bribing goblins for market intel...",
+    "Decoding ancient market scrolls...",
 ];
 
 const LOW_LIMIT_THRESHOLD = 1000;
 
-const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue'; icon?: React.ElementType }> = ({ text, color, icon: Icon }) => {
+const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue'; icon?: React.ElementType; tooltipText?: string; }> = ({ text, color, icon: Icon, tooltipText }) => {
     const colors = {
         green: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
         yellow: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
         red: 'bg-red-500/20 text-red-300 border-red-500/30',
         blue: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
     };
-    return (
+    
+    const tagContent = (
         <div className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${colors[color]}`}>
             {Icon && <Icon className="w-3 h-3" />}
             <span>{text}</span>
         </div>
-    )
+    );
+
+    if (!tooltipText) {
+        return tagContent;
+    }
+
+    return (
+        <div className="relative group">
+            {tagContent}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-max max-w-xs bg-gray-900 text-white text-xs rounded-lg py-1.5 px-2.5 shadow-lg border border-gray-700 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                {tooltipText}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-900 transform rotate-45 border-b border-r border-gray-700"></div>
+            </div>
+        </div>
+    );
 };
 
 const CollapsibleAnalysis: React.FC<{ justification: string, riskJustification: string }> = ({ justification, riskJustification }) => {
@@ -115,8 +135,17 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
                 <div className="flex-1">
                     <h3 className="text-xl font-bold text-white">{suggestion.itemName}</h3>
                     <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <Tag text={suggestion.flipVelocity} color={velocityColor} icon={ZapIcon} />
-                        <Tag text={suggestion.riskLevel} color={riskColor} />
+                        <Tag 
+                            text={suggestion.flipVelocity} 
+                            color={velocityColor} 
+                            icon={ZapIcon}
+                            tooltipText="Indicates how quickly an item's buy limit can be traded. 'Very High' suggests multiple times per day."
+                        />
+                        <Tag 
+                            text={suggestion.riskLevel} 
+                            color={riskColor}
+                            tooltipText="The AI's assessment of price volatility and market liquidity. 'Low' risk items are generally stable with high trade volume."
+                        />
                          {validWebSources && validWebSources.length > 0 && (
                             <div className="relative group">
                                 <Tag text="Web Verified" color="blue" />
@@ -141,6 +170,10 @@ const SuggestionCard: React.FC<{ suggestion: FlippingSuggestion; onSelect: () =>
                  <div className="flex justify-between">
                     <span className="text-gray-400">Buy / Sell Price</span>
                     <span className="font-semibold text-white">{suggestion.buyPrice.toLocaleString()} / {suggestion.sellPrice.toLocaleString()}</span>
+                </div>
+                <div className="flex justify-between">
+                    <span className="text-gray-400">Buy Limit</span>
+                    <span className="font-semibold text-white">{allItems[suggestion.itemId]?.limit.toLocaleString() ?? 'N/A'}</span>
                 </div>
                 <div className="flex justify-between">
                     <span className="text-gray-400">Net Margin / Item</span>
@@ -341,15 +374,40 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
     // History state
     const [history, setHistory] = useLocalStorage<HistoricAnalysis[]>('flippingHistory', []);
     const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoricAnalysis | null>(null);
+    
+    const shuffledMessages = useRef<string[]>([]);
+    const messageIndex = useRef(0);
 
     useEffect(() => {
         let interval: number;
         if (isAnalyzing) {
+            // Fisher-Yates shuffle algorithm
+            const shuffle = (array: string[]) => {
+                let currentIndex = array.length, randomIndex;
+                while (currentIndex !== 0) {
+                    randomIndex = Math.floor(Math.random() * currentIndex);
+                    currentIndex--;
+                    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+                }
+                return array;
+            };
+
+            // Initial shuffle and set first message
+            shuffledMessages.current = shuffle([...FUN_STATUS_MESSAGES]);
+            messageIndex.current = 0;
+            setStatusMessage(shuffledMessages.current[messageIndex.current]);
+
             interval = window.setInterval(() => {
-                setStatusMessage(FUN_STATUS_MESSAGES[Math.floor(Math.random() * FUN_STATUS_MESSAGES.length)]);
+                messageIndex.current = messageIndex.current + 1;
+                // If we've shown all messages, re-shuffle and start over
+                if (messageIndex.current >= shuffledMessages.current.length) {
+                    shuffledMessages.current = shuffle([...FUN_STATUS_MESSAGES]);
+                    messageIndex.current = 0;
+                }
+                setStatusMessage(shuffledMessages.current[messageIndex.current]);
             }, 3000);
         }
-        return () => clearInterval(interval);
+        return () => window.clearInterval(interval);
     }, [isAnalyzing]);
 
 
@@ -649,7 +707,7 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             {isAnalyzing ? (
                 <div className="flex flex-col items-center justify-center text-center h-96">
                     <div className="max-w-lg w-full">
-                        <Loader size="lg" />
+                        <Loader size="lg" className="mx-auto" />
                         <p className="text-lg text-white font-semibold mt-6">{statusMessage || 'Initializing...'}</p>
                         <div className="mt-4"><ProgressBar progress={progress} /></div>
                         <p className="text-gray-400 text-sm mt-3">This may take a moment. The AI is sifting through thousands of items for the best margins and liquidity.</p>

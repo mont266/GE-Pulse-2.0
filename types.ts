@@ -156,6 +156,12 @@ export interface ItemAnalysis {
     confidence: 'High' | 'Medium' | 'Low';
     risk: 'High' | 'Medium' | 'Low';
     analysisText: string;
+    webSources?: {
+      web?: {
+        uri?: string;
+        title?: string;
+      }
+    }[];
 }
 
 // --- Community Feed Types ---

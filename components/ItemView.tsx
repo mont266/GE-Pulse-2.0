@@ -6,7 +6,7 @@ import { VolumeChart } from './VolumeChart';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
-import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon, SlidersIcon } from './icons/Icons';
+import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon, SlidersIcon, ChevronRightIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl } from '../utils/image';
 import { TooltipWrapper } from './ui/Tooltip';
 import { SkeletonChart } from './ui/Skeleton';
@@ -96,6 +96,42 @@ const Tag: React.FC<{ text: string; color: 'green' | 'yellow' | 'red' | 'blue' }
     )
 };
 
+const CollapsibleAnalysis: React.FC<{ analysisText: string }> = ({ analysisText }) => {
+    const sections = analysisText.split(/\n\n(?=\*\*.+?\*\*)/);
+
+    if (sections.length <= 1) {
+        return <p className="text-sm text-gray-300 whitespace-pre-wrap">{analysisText}</p>;
+    }
+
+    const firstPart = sections[0].trim();
+    const collapsibleParts = sections.slice(1).map(part => {
+        const match = part.match(/\*\*(.+?)\*\*\s*([\s\S]*)/);
+        if (match) {
+            const title = match[1].trim();
+            const content = match[2].trim();
+            return { title, content };
+        }
+        return null;
+    }).filter((p): p is { title: string; content: string } => p !== null);
+
+    return (
+        <>
+            <p className="text-sm text-gray-300 whitespace-pre-wrap">{firstPart}</p>
+            {collapsibleParts.map((part, index) => (
+                <details key={index} className="mt-3 group">
+                    <summary className="flex items-center gap-2 font-semibold text-gray-300 cursor-pointer hover:text-white transition-colors list-none">
+                        <ChevronRightIcon className="w-4 h-4 transition-transform duration-200 group-open:rotate-90 flex-shrink-0" />
+                        <span>{part.title}</span>
+                    </summary>
+                    <div className="pl-6 pt-2 pb-1 text-gray-300 whitespace-pre-wrap border-l-2 border-gray-700/50 ml-2">
+                        {part.content}
+                    </div>
+                </details>
+            ))}
+        </>
+    );
+};
+
 const CountdownCircle: React.FC<{ countdown: number; duration: number }> = ({ countdown, duration }) => {
   const radius = 18;
   const circumference = 2 * Math.PI * radius;
@@ -158,6 +194,8 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<ItemAnalysis | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [isWebSourcesOpen, setIsWebSourcesOpen] = useState(false);
+
 
   // Star animation state
   const isWatched = watchlist.includes(item.id);
@@ -247,6 +285,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // FIX: Corrected a typo in the type annotation for the `timeViewToApiTimeStep` function from `ApiStep` to `ApiTimeStep` to match the defined type alias.
   const timeViewToApiTimeStep = (timeView: TimeView): ApiTimeStep => {
     if (['1H', '6H', '1D'].includes(timeView)) return '5m';
     if (timeView === '1W') return '1h';
@@ -425,7 +464,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
             priceFluctuationVsPeriodStart: priceFluctuation ? `${priceFluctuation.percent.toFixed(2)}% over ${activeTimeView}` : 'N/A',
         };
 
-        const prompt = `You are an expert market analyst for the video game Old School RuneScape, specializing in the Grand Exchange. Analyze the provided market data for the item "${item.name}" and provide a concise, expert opinion for a player considering trading this item.
+        const jsonPrompt = `You are an expert market analyst for the video game Old School RuneScape, specializing in the Grand Exchange. Analyze the provided market data for the item "${item.name}" and provide a concise, expert opinion for a player considering trading this item.
         
         Market Data: ${JSON.stringify(contextData, null, 2)}
 
@@ -451,17 +490,39 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
             required: ["suggestion", "confidence", "risk", "analysisText"],
         };
         
-        const response = await ai.models.generateContent({
+        // --- Step 1: Get Structured Analysis ---
+        const jsonResponse = await ai.models.generateContent({
             model: 'gemini-2.5-pro',
-            contents: prompt,
+            contents: jsonPrompt,
             config: {
                 responseMimeType: "application/json",
                 responseSchema,
             },
         });
         
-        const result = JSON.parse(response.text.trim()) as ItemAnalysis;
-        setAnalysisResult(result);
+        const structuredResult = JSON.parse(jsonResponse.text.trim()) as ItemAnalysis;
+        
+        // --- Step 2: Get Web-Grounded Context ---
+        const groundingPrompt = `In Old School RuneScape, what recent news, updates, or community trends might affect the price of a '${item.name}'? Summarize relevant information concisely.`;
+        
+        const groundingResponse = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: groundingPrompt,
+            config: { tools: [{googleSearch: {}}] },
+        });
+
+        const webInsight = groundingResponse.text;
+        const sources = groundingResponse.candidates?.[0]?.groundingMetadata?.groundingChunks;
+
+        // --- Step 3: Combine Results ---
+        if (webInsight && webInsight.length > 10 && !webInsight.toLowerCase().includes("i am not able")) {
+            structuredResult.analysisText += `\n\n**Web Insight:** ${webInsight}`;
+        }
+        if (sources && sources.length > 0) {
+            structuredResult.webSources = sources.filter(s => s.web?.uri && s.web?.title);
+        }
+
+        setAnalysisResult(structuredResult);
 
     } catch (err: any) {
         console.error("AI Analysis Error:", err);
@@ -472,6 +533,8 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   };
   
   const isPendingAdd = pendingWatchlistAdds.has(item.id);
+  const validWebSources = analysisResult?.webSources?.filter(s => s.web?.uri && s.web?.title);
+
 
   return (
     <div className="pt-4 md:pt-8">
@@ -676,8 +739,41 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                                     <p className="text-sm text-gray-400">Risk</p>
                                     <Tag text={analysisResult.risk} color={analysisResult.risk === 'High' ? 'red' : analysisResult.risk === 'Medium' ? 'yellow' : 'green'} />
                                 </div>
+                                {validWebSources && validWebSources.length > 0 && (
+                                    <div>
+                                        <p className="text-sm text-gray-400">Context</p>
+                                        <Tag text="Web Verified" color="blue" />
+                                    </div>
+                                )}
                             </div>
-                            <p className="text-gray-300 whitespace-pre-wrap">{analysisResult.analysisText}</p>
+                            <CollapsibleAnalysis analysisText={analysisResult.analysisText} />
+                            {validWebSources && validWebSources.length > 0 && (
+                                <div className="mt-4">
+                                    <button 
+                                        onClick={() => setIsWebSourcesOpen(p => !p)}
+                                        className="w-full flex justify-between items-center text-left text-xs font-semibold text-gray-400 mb-1.5 uppercase hover:text-gray-200 transition-colors"
+                                        aria-expanded={isWebSourcesOpen}
+                                    >
+                                        <span>Web Sources</span>
+                                        <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${isWebSourcesOpen ? 'rotate-90' : ''}`} />
+                                    </button>
+                                    {isWebSourcesOpen && (
+                                        <div className="space-y-1.5 pt-1">
+                                            {validWebSources.map((source, index) => (
+                                                <a 
+                                                    href={source.web!.uri} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    key={index}
+                                                    className="text-xs text-emerald-400 hover:underline block truncate bg-gray-900/50 p-2 rounded-md"
+                                                >
+                                                    {source.web!.title}
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </Card>
