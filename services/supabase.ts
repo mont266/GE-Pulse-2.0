@@ -1,4 +1,5 @@
 
+
 import { createClient } from '@supabase/supabase-js';
 import type { AppStats, LeaderboardEntry, LeaderboardTimeRange, StatsTimeRange, Achievement, ProgressionNotificationData } from '../types';
 
@@ -368,9 +369,9 @@ export type Database = {
 // For local development, create a .env file in the root directory.
 // For production (e.g., Netlify), set these in your site's environment settings.
 
-// FIX: Replaced `import.meta.env` with `process.env` to resolve TypeScript errors and maintain consistency with environment variable access across the application.
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
+// FIX: Switched back to using `import.meta.env` to correctly access Vite environment variables on the client side, which resolves the "supabaseUrl is required" error.
+const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL;
+const supabaseAnonKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY;
 
 
 if (!supabaseUrl || !supabaseAnonKey) {
