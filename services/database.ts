@@ -610,7 +610,7 @@ export const createPost = async (userId: string, postData: { title?: string | nu
     const { data, error } = await supabase
         .from('posts')
         .insert(payload)
-        .select('*, profiles(username, level, premium)')
+        .select('*, profiles:profiles(username, level, premium)')
         .single();
 
     if (error) {
@@ -632,7 +632,7 @@ export const createPost = async (userId: string, postData: { title?: string | nu
 export const fetchPosts = async (): Promise<Post[]> => {
     const { data, error } = await supabase
         .from('posts')
-        .select('*, profiles(username, level, premium), comments(count)')
+        .select('*, profiles:profiles(username, level, premium), comments(count)')
         .order('created_at', { ascending: false });
 
     if (error) {
@@ -661,7 +661,7 @@ export const createComment = async (userId: string, postId: string, content: str
     const { data, error } = await supabase
         .from('comments')
         .insert({ user_id: userId, post_id: postId, content, parent_comment_id: parentCommentId })
-        .select('*, profiles(username, level, premium)')
+        .select('*, profiles:profiles(username, level, premium)')
         .single();
 
     if (error) {
@@ -683,7 +683,7 @@ export const createComment = async (userId: string, postId: string, content: str
 export const fetchCommentsForPost = async (postId: string): Promise<Comment[]> => {
     const { data, error } = await supabase
         .from('comments')
-        .select('*, profiles(username, level, premium)')
+        .select('*, profiles:profiles(username, level, premium)')
         .eq('post_id', postId)
         .order('created_at', { ascending: true });
 
