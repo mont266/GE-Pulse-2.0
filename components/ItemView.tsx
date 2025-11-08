@@ -604,12 +604,14 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
         {isChartFullscreen && (
           <FullscreenChartModal onClose={() => setIsChartFullscreen(false)}>
               <div className="h-full flex flex-col">
-                  <div className="flex-grow h-2/3">
+                  <div className="flex-grow-[2] min-h-0">
                       <PriceChart data={filteredTimeseriesData} isInitialLoad={false} showAverageLine={chartSettings.showAverageLine} isFullscreen={true} />
                   </div>
-                  <div className="flex-grow h-1/3 pt-4 border-t border-gray-700/50 mt-4">
-                      <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
-                      <VolumeChart data={filteredTimeseriesData} isInitialLoad={false} isFullscreen={true} />
+                  <div className="flex-grow-[1] min-h-0 pt-4 border-t border-gray-700/50 mt-4 flex flex-col">
+                      <p className="text-xs font-bold text-gray-400 text-center mb-2 z-10 relative flex-shrink-0">Trade Volume</p>
+                      <div className="flex-1 min-h-0">
+                        <VolumeChart data={filteredTimeseriesData} isInitialLoad={false} isFullscreen={true} />
+                      </div>
                   </div>
               </div>
           </FullscreenChartModal>

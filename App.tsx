@@ -975,7 +975,7 @@ export default function App() {
               </div>
             </header>
 
-            <main className="flex-1 overflow-y-auto px-4 pb-24 md:px-8 md:pb-8">
+            <main className="flex-1 overflow-y-auto overflow-x-hidden px-4 pb-24 md:px-8 md:pb-8">
               {renderContent()}
               <footer className="mt-16 pt-6 border-t border-gray-700/50 text-center text-xs text-gray-500">
                 <p className="font-semibold">GE Pulse - Beta V1.0</p>
