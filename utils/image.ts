@@ -188,3 +188,35 @@ export const formatLargeNumber = (num: number): string => {
     }
     return (sign < 0 ? "-" : "") + absNum.toLocaleString();
 };
+
+/**
+ * Calculates the breakeven sell price for an item, including GE tax.
+ * @param purchasePrice The price the item was bought for.
+ * @param itemName The name of the item.
+ * @returns The per-item sell price needed to break even.
+ */
+export const calculateBreakevenPrice = (purchasePrice: number, itemName: string): number => {
+  // If the item is tax-exempt or purchase price is too low to ever be taxed, breakeven is the purchase price.
+  if (TAX_EXEMPT_ITEMS.has(itemName) || purchasePrice < MIN_PRICE_FOR_TAX_THRESHOLD) {
+    return purchasePrice;
+  }
+  
+  // Breakeven Sell Price * (1 - Tax Rate) = Purchase Price
+  // Breakeven Sell Price = Purchase Price / (1 - Tax Rate)
+  // We need to find the smallest integer sellPrice where sellPrice - tax >= purchasePrice
+  
+  const approximateBreakeven = purchasePrice / (1 - TAX_RATE);
+  const potentialBreakeven = Math.floor(approximateBreakeven);
+
+  // Start checking from the floor of the approximation. Due to the nature of floor() in the tax calc,
+  // the true breakeven will be very close to this value. A small loop is sufficient.
+  for (let price = potentialBreakeven; price < potentialBreakeven + 5; price++) {
+      const tax = calculateGeTax(itemName, price, 1);
+      if (price - tax >= purchasePrice) {
+          return price;
+      }
+  }
+
+  // Fallback in case the loop doesn't find it, which is highly unlikely.
+  return Math.ceil(approximateBreakeven);
+};

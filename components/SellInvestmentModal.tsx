@@ -5,7 +5,7 @@ import type { Item, LatestPrice, Investment } from '../types';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
 import { XIcon, InfoIcon, Trash2Icon } from './icons/Icons';
-import { getHighResImageUrl, createIconDataUrl, parseShorthandPrice, calculateGeTax } from '../utils/image';
+import { getHighResImageUrl, createIconDataUrl, parseShorthandPrice, calculateGeTax, calculateBreakevenPrice } from '../utils/image';
 
 interface SellInvestmentModalProps {
   investment: Investment;
@@ -52,6 +52,10 @@ export const SellInvestmentModal: React.FC<SellInvestmentModalProps> = ({ invest
         price: parseShorthandPrice(entry.price)
     })).filter(s => !isNaN(s.quantity) && s.quantity > 0 && !isNaN(s.price) && s.price > 0);
   }, [saleEntries]);
+  
+  const breakevenPrice = useMemo(() => {
+    return calculateBreakevenPrice(investment.purchase_price, item.name);
+  }, [investment.purchase_price, item.name]);
 
   const { totalQuantitySold, totalSellValue, totalTax, totalProfit } = useMemo(() => {
     let quantity = 0;
@@ -136,6 +140,9 @@ export const SellInvestmentModal: React.FC<SellInvestmentModalProps> = ({ invest
             <div>
                 <h2 className="text-xl font-bold text-white">Log Sale(s)</h2>
                 <p className="text-gray-300">{item.name}</p>
+                <p className="text-xs text-gray-400 mt-1">
+                    Breakeven Price (inc. tax): <span className="font-semibold text-yellow-300">{breakevenPrice.toLocaleString()} gp</span>
+                </p>
             </div>
         </div>
 
