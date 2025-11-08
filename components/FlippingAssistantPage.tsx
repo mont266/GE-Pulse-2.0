@@ -498,21 +498,29 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             setProgress(30);
 
             const sortedCandidates = candidates.sort((a, b) => {
-                 const score = (c: typeof candidates[0]) => {
+                const score = (c: typeof candidates[0]) => {
                     let score = 0;
-                    const profitScore = Math.log(c.potentialProfit + 1) * 10;
-                    const velocityScore = Math.log(c.flipVelocityScore + 1) * 5;
-                    const marginScore = c.netMarginPercentage * 2;
-                    switch(strategy) {
-                        case 'high_margin': score = marginScore * 1.5 + profitScore + velocityScore; break;
-                        case 'dip_buys': score = (c.priceChange24h < 0 ? -c.priceChange24h * 2 : 0) + profitScore + velocityScore; break;
-                        case 'momentum_plays': score = (c.priceChange24h > 0 ? c.priceChange24h * 2 : 0) + profitScore + velocityScore; break;
-                        default: score = profitScore * 1.2 + velocityScore * 1.5 + marginScore; break;
-                    }
-                     return score;
-                }
-                return score(b) - score(a);
+                    const roiScore = c.netMarginPercentage * 15; // Emphasize ROI
+                    const velocityScore = Math.log(c.flipVelocityScore + 1) * 10; // Emphasize turnover speed
+                    const profitMagnitudeScore = Math.log(c.potentialProfit + 1); // Still consider total profit, but with less weight
 
+                    switch(strategy) {
+                        case 'high_margin':
+                            score = roiScore * 2 + velocityScore + profitMagnitudeScore; break;
+                        case 'dip_buys':
+                            const dipBonus = c.priceChange24h < -1 ? -c.priceChange24h : 0; // Bonus for items that dipped > 1%
+                            score = roiScore + velocityScore + profitMagnitudeScore + dipBonus; break;
+                        case 'momentum_plays':
+                            const momentumBonus = c.priceChange1h > 0.5 ? c.priceChange1h * 2 : 0; // Bonus for recent upward momentum
+                            score = roiScore + velocityScore + profitMagnitudeScore + momentumBonus; break;
+                        case 'balanced':
+                        default:
+                            const tradabilityBonus = c.tradabilityTier === 'Excellent' ? 10 : c.tradabilityTier === 'Good' ? 5 : 0;
+                            score = roiScore + velocityScore * 1.5 + profitMagnitudeScore + tradabilityBonus; break;
+                    }
+                    return score;
+                };
+                return score(b) - score(a);
             }).slice(0, 30);
 
             if (sortedCandidates.length === 0) {
@@ -570,18 +578,19 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
             - Strategy: ${strategy}. ${strategyDefinition[strategy]}
 
             Key Data Points Explained:
+            -   **netMarginPercentage**: CRITICAL. This is the Return on Investment (ROI) for flipping one item. A value above 0.5% is decent, and above 2% is excellent. This should be a primary factor in your decision-making.
             -   **flipVelocityScore**: CRITICAL. Measures how many times the item's buy limit turns over per day. Higher is better. A score over 50 is good, over 200 is excellent.
             -   **tradabilityTier**: CRITICAL. A summary of liquidity. 'Excellent' or 'Good' is required for safe flips.
             -   **liquidityRatio**: Ratio of sell volume to buy volume. A value close to 1.0 is ideal.
 
             Your Task:
-            1.  Review the data, prioritizing items aligned with my strategy.
+            1.  Review the data, prioritizing items aligned with my strategy. YOU MUST prioritize items with a high 'netMarginPercentage' (ROI) over those with low margins, even if the total 'potentialProfit' is high. A 40k profit on a 25m investment (0.16% ROI) is a BAD suggestion. A 20k profit on a 1m investment (2% ROI) is a GOOD suggestion.
             2.  For each of the top 5:
                 a.  **riskLevel**: Determine a 'riskLevel' (Low, Medium, High) based on tradabilityTier, price volatility (priceChange fields), and liquidityRatio. Low tradabilityTier MUST result in a High riskLevel.
                 b.  **riskJustification**: Write a single sentence explaining the riskLevel. E.g., "Low risk due to excellent trade volume and stable price trends."
                 c.  **confidenceScore**: Provide a numerical score from 0 to 100 representing your confidence in this flip's success for the chosen strategy. High confidence requires Excellent/Good tradability and price patterns supporting the strategy.
                 d.  **flipVelocity**: Rate this from 'Very High' to 'Low' based *only* on the 'flipVelocityScore'. >200 is Very High, >50 is High, >10 is Medium, else Low.
-                e.  **justification**: Write a concise 'justification' (2-3 sentences) explaining *why* it's a good flip. You MUST reference key data points.
+                e.  **justification**: Write a concise 'justification' (2-3 sentences) explaining *why* it's a good flip. You MUST reference key data points like ROI and velocity.
             3.  Return a JSON array of the top 5 suggestions, ranked from best to worst. Use the pre-calculated 'potentialProfit' and other values directly.
 
             DATA: ${JSON.stringify(candidatesWithHistory)}`;
