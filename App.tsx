@@ -113,47 +113,48 @@ export default function App() {
 
   // --- Supabase Auth & Profile Listener ---
   useEffect(() => {
-    const fetchSessionAndProfile = async () => {
-        const { data: { session } } = await supabase.auth.getSession();
-        setSession(session);
-        if (session) {
-            const userProfile = await getProfile(session.user.id);
-            if (userProfile) {
-              setProfile({ ...userProfile, email: session.user.email ?? null });
-              if (!userProfile.username) {
-                  setIsProfileModalOpen(true); // Prompt for username if not set
-              }
-            }
-        }
+    // This effect will run once on mount.
+    // The onAuthStateChange callback is executed immediately with the current session.
+    
+    const handleInvalidSession = async () => {
+        console.warn("Session is invalid or profile is missing. Signing out.");
+        await supabase.auth.signOut();
+        // The onAuthStateChange listener will fire again with a null session, cleaning up the state.
     };
-
-    fetchSessionAndProfile();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         setSession(session);
         if (session) {
-            setIsAuthModalOpen(false); // Close auth modal on login
-            const userProfile = await getProfile(session.user.id);
-            if (userProfile) {
-                setProfile({ ...userProfile, email: session.user.email ?? null });
-                if (!userProfile.username) {
-                    setIsProfileModalOpen(true);
+            setIsAuthModalOpen(false); // Close auth modal on successful session
+            try {
+                const userProfile = await getProfile(session.user.id);
+                if (userProfile) {
+                    // Profile exists, we are in a good state.
+                    setProfile({ ...userProfile, email: session.user.email ?? null });
+                    if (!userProfile.username) {
+                        setIsProfileModalOpen(true); // Prompt for username if not set
+                    }
+                    
+                    // Record login and show notifications
+                    const now = Date.now();
+                    if (!loggedInSince.current || (now - loggedInSince.current > 1000 * 60 * 5)) { // Only if not logged in recently
+                        loggedInSince.current = now;
+                        const loginEvents = await recordLogin(session.user.id);
+                        addNotifications(loginEvents);
+                        // Refetch profile to get updated streak/xp
+                        const updatedProfile = await getProfile(session.user.id);
+                        if(updatedProfile) setProfile(p => ({...p, ...updatedProfile, email: session.user.email ?? null }));
+                    }
+                } else {
+                    // We have a session but no profile. This is a corrupted state.
+                    await handleInvalidSession();
                 }
-                // Record login and show notifications
-                const now = Date.now();
-                if (!loggedInSince.current || (now - loggedInSince.current > 1000 * 60 * 5)) { // Only if not logged in recently
-                    loggedInSince.current = now;
-                    const loginEvents = await recordLogin(session.user.id);
-                    addNotifications(loginEvents);
-                    // Refetch profile to get updated streak/xp
-                    const updatedProfile = await getProfile(session.user.id);
-                    if(updatedProfile) setProfile(p => ({...p, ...updatedProfile, email: session.user.email ?? null }));
-                }
-
-            } else {
-                setProfile(null);
+            } catch (error) {
+                console.error("Error fetching profile, signing out:", error);
+                await handleInvalidSession();
             }
         } else {
+            // No session, so clear profile data. This is the logged-out state.
             setProfile(null);
             loggedInSince.current = null;
             setCurrentView('home'); // Go to home on logout
