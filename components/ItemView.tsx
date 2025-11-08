@@ -6,7 +6,7 @@ import { VolumeChart } from './VolumeChart';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Loader } from './ui/Loader';
-import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon, SlidersIcon, ChevronRightIcon } from './icons/Icons';
+import { ArrowLeftIcon, StarIcon, BellIcon, RefreshCwIcon, ChevronDownIcon, BriefcaseIcon, Share2Icon, BotIcon, SlidersIcon, ChevronRightIcon, ExpandIcon, XIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl } from '../utils/image';
 import { TooltipWrapper } from './ui/Tooltip';
 import { SkeletonChart } from './ui/Skeleton';
@@ -170,6 +170,45 @@ const CountdownCircle: React.FC<{ countdown: number; duration: number }> = ({ co
   );
 };
 
+const FullscreenChartModal: React.FC<{
+    onClose: () => void;
+    children: React.ReactNode;
+}> = ({ onClose, children }) => {
+    useEffect(() => {
+        const lockOrientation = async () => {
+            try {
+                // FIX: Cast `screen.orientation` to `any` to access the experimental `lock` method, which may not be in default TypeScript types.
+                if (screen.orientation && typeof (screen.orientation as any).lock === 'function') {
+                    await (screen.orientation as any).lock('landscape');
+                }
+            } catch (error) {
+                console.warn('Screen orientation lock failed. This is common on iOS and some browsers.', error);
+            }
+        };
+        lockOrientation();
+
+        return () => {
+            // FIX: Cast `screen.orientation` to `any` to access the experimental `unlock` method, which may also be missing from types.
+            if (screen.orientation && typeof (screen.orientation as any).unlock === 'function') {
+                (screen.orientation as any).unlock();
+            }
+        };
+    }, []);
+
+    return (
+        <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col p-2 md:p-4 animate-fade-in">
+            <div className="flex justify-end mb-2 flex-shrink-0">
+                <Button onClick={onClose} variant="secondary" size="icon" className="w-9 h-9">
+                    <XIcon className="w-5 h-5" />
+                </Button>
+            </div>
+            <div className="flex-1 w-full h-full min-h-0">
+                {children}
+            </div>
+        </div>
+    );
+};
+
 
 export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, onRefreshPrices, watchlist, toggleWatchlist, pendingWatchlistAdds, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices }) => {
   const [activeTimeView, setActiveTimeView] = useState<TimeView>('1W');
@@ -188,6 +227,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   // Modals State
   const [isChartSettingsModalOpen, setIsChartSettingsModalOpen] = useState(false);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [isChartFullscreen, setIsChartFullscreen] = useState(false);
   const [chartSettings, setChartSettings] = useLocalStorage('chartSettings', { showAverageLine: true });
 
   // AI Analysis State
@@ -537,285 +577,303 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
 
 
   return (
-    <div className="pt-4 md:pt-8">
-      {notification && (
-        <div className={`fixed top-5 right-5 ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
-          {notification.message}
-        </div>
-      )}
-      {isChartSettingsModalOpen && (
-        <ChartSettingsModal
-            settings={chartSettings}
-            onClose={() => setIsChartSettingsModalOpen(false)}
-            onSettingsChange={setChartSettings}
-        />
-      )}
-      {isAlertModalOpen && (
-        <AlertSettingsModal
-            item={item}
-            latestPrice={latestPrice}
-            existingAlert={existingAlert ?? null}
-            onClose={() => setIsAlertModalOpen(false)}
-            onSave={handleSaveAlert}
-            onRemove={handleRemoveAlert}
-        />
-      )}
-      <div className="flex items-center gap-4 mb-6">
-        <Button onClick={onBack} variant="ghost" size="icon">
-          <ArrowLeftIcon className="w-6 h-6" />
-        </Button>
-        <img 
-          src={getHighResImageUrl(item.name)}
-          onError={(e) => {
-            e.currentTarget.onerror = null;
-            e.currentTarget.src = createIconDataUrl(item.icon);
-          }}
-          alt={item.name} 
-          className="w-12 h-12 object-contain bg-gray-700/50 rounded-md"
-        />
-        <h2 className="text-3xl font-bold text-white flex-1">{item.name}</h2>
-        <div className="flex items-center gap-2">
-            <Button onClick={handleShare} variant="ghost" size="icon" className='text-gray-400 hover:text-emerald-400'>
-              <Share2Icon className="w-6 h-6" />
-            </Button>
-            <Button onClick={() => onOpenAddInvestmentModal(item)} variant="ghost" size="icon" className='text-gray-400 hover:text-emerald-400'>
-              <BriefcaseIcon className="w-6 h-6" />
-            </Button>
-            <Button onClick={() => toggleWatchlist(item.id)} variant="ghost" size="icon" className={`${isWatched ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'} ${isPendingAdd ? 'pulse-bg rounded-full' : ''}`}>
-              <StarIcon className={`w-6 h-6 ${isAnimatingStar ? 'animate-pop' : ''}`} />
-            </Button>
-            <Button onClick={handleOpenAlertModal} variant="ghost" size="icon" className={`${existingAlert ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400'} ${shakeBellIcon ? 'animate-shake' : ''}`}>
-                <BellIcon className="w-6 h-6" />
-            </Button>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <Card className="relative">
-            <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
-               <div className="flex-1 pr-4 min-w-[200px]">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
-                  <div>
-                    <p className="text-sm text-gray-400">High Price (Buy)</p>
-                    <p className="text-2xl md:text-3xl font-bold text-white truncate">
-                      {latestPrice?.high?.toLocaleString() || 'N/A'} gp
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-400">Low Price (Sell)</p>
-                    <p className="text-2xl md:text-3xl font-bold text-white truncate">
-                      {latestPrice?.low?.toLocaleString() || 'N/A'} gp
-                    </p>
-                  </div>
-                </div>
-                {displayFluctuation && (
-                    <div className="mt-2">
-                        <p className={`text-base font-semibold ${
-                            animatedAbsolute > 0 ? 'text-emerald-400' :
-                            animatedAbsolute < 0 ? 'text-red-400' : 'text-gray-400'
-                        }`}>
-                            {animatedAbsolute >= 0 ? '+' : ''}
-                            {Math.round(animatedAbsolute).toLocaleString()}
-                            <span className="ml-1">({animatedPercent >= 0 ? '+' : ''}{animatedPercent.toFixed(2)}%)</span>
-                            <span className="text-sm font-normal text-gray-400 ml-2">High price change vs. {activeTimeView} ago</span>
-                        </p>
-                    </div>
-                )}
-              </div>
-              <div className="flex items-center gap-x-4 gap-y-2 flex-wrap justify-end">
-                 <div className="relative" ref={dropdownRef}>
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setIsDropdownOpen(prev => !prev)}
-                        className="flex items-center gap-2 min-w-20 justify-center"
-                    >
-                        <span>{activeTimeView}</span>
-                        <ChevronDownIcon className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
-                    </Button>
-                    {isDropdownOpen && (
-                        <div className="absolute right-0 top-full mt-2 w-28 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1">
-                            {timeViewOptions.map(tv => (
-                                <button
-                                    key={tv}
-                                    onClick={() => handleTimeViewChange(tv)}
-                                    className={`w-full text-left px-3 py-1.5 text-sm rounded-md ${
-                                        activeTimeView === tv
-                                            ? 'bg-emerald-600 text-white'
-                                            : 'text-gray-300 hover:bg-gray-700/50'
-                                    }`}
-                                >
-                                    {tv}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                </div>
-                <Button onClick={() => setIsChartSettingsModalOpen(true)} variant="secondary" size="icon" className="w-9 h-9">
-                    <SlidersIcon className="w-5 h-5" />
-                </Button>
-                {isAutoRefreshEnabled ? (
-                    <CountdownCircle countdown={countdown} duration={AUTO_REFRESH_SECONDS} />
-                ) : (
-                    <Button onClick={handleManualRefresh} variant="ghost" size="icon" disabled={isLoading} className="w-9 h-9">
-                        {isLoading ? <Loader size="sm" /> : <RefreshCwIcon className="w-4 h-4" />}
-                    </Button>
-                )}
-                <div className="flex items-center gap-2">
-                  <label htmlFor="auto-refresh-toggle" className="text-sm text-gray-300 cursor-pointer select-none">
-                      Auto
-                  </label>
-                  <button
-                      id="auto-refresh-toggle"
-                      role="switch"
-                      aria-checked={isAutoRefreshEnabled}
-                      onClick={handleToggleAutoRefresh}
-                      className={`${
-                      isAutoRefreshEnabled ? 'bg-emerald-600' : 'bg-gray-600'
-                      } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
-                  >
-                      <span
-                      aria-hidden="true"
-                      className={`${
-                          isAutoRefreshEnabled ? 'translate-x-5' : 'translate-x-0'
-                      } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
-                      />
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="h-[28rem]">
-              {isLoading && isInitialLoad.current ? (
-                <SkeletonChart />
-              ) : (
-                <div className="h-full flex flex-col animate-fade-in">
+    <>
+      <div className="pt-4 md:pt-8">
+        {notification && (
+          <div className={`fixed top-5 right-5 ${notification.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'} text-white py-2 px-4 rounded-lg shadow-lg z-50 animate-fade-in`}>
+            {notification.message}
+          </div>
+        )}
+        {isChartSettingsModalOpen && (
+          <ChartSettingsModal
+              settings={chartSettings}
+              onClose={() => setIsChartSettingsModalOpen(false)}
+              onSettingsChange={setChartSettings}
+          />
+        )}
+        {isAlertModalOpen && (
+          <AlertSettingsModal
+              item={item}
+              latestPrice={latestPrice}
+              existingAlert={existingAlert ?? null}
+              onClose={() => setIsAlertModalOpen(false)}
+              onSave={handleSaveAlert}
+              onRemove={handleRemoveAlert}
+          />
+        )}
+        {isChartFullscreen && (
+          <FullscreenChartModal onClose={() => setIsChartFullscreen(false)}>
+              <div className="h-full flex flex-col">
                   <div className="flex-grow h-2/3">
-                    <PriceChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} showAverageLine={chartSettings.showAverageLine} />
+                      <PriceChart data={filteredTimeseriesData} isInitialLoad={false} showAverageLine={chartSettings.showAverageLine} isFullscreen={true} />
                   </div>
                   <div className="flex-grow h-1/3 pt-4 border-t border-gray-700/50 mt-4">
-                    <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
-                    <VolumeChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} />
+                      <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
+                      <VolumeChart data={filteredTimeseriesData} isInitialLoad={false} isFullscreen={true} />
                   </div>
-                </div>
-              )}
-            </div>
-            {chartFlash && (
-              <div
-                key={chartFlash + Date.now()} // Force re-animation
-                className={`absolute inset-0 rounded-lg pointer-events-none ${
-                  chartFlash === 'up' ? 'animate-glow-green' :
-                  chartFlash === 'down' ? 'animate-glow-red' :
-                  'animate-glow-white'
-                }`}
-              ></div>
-            )}
-          </Card>
-           {(isAnalyzing || analysisResult || aiError) && (
-                <Card className="mt-6">
-                    <div className="flex items-center gap-3 mb-4">
-                        <BotIcon className="w-6 h-6 text-emerald-400" />
-                        <h3 className="text-xl font-bold text-white">AI Market Analysis</h3>
-                    </div>
-                    {isAnalyzing && (
-                         <div className="flex flex-col items-center justify-center text-center p-8">
-                             <Loader />
-                             <p className="text-gray-300 mt-4">Analyzing market data for {item.name}...</p>
-                         </div>
-                    )}
-                    {aiError && <p className="text-red-400 bg-red-500/10 p-3 rounded-md">{aiError}</p>}
-                    {analysisResult && (
-                        <div>
-                            <div className="flex flex-wrap items-center gap-4 mb-4 pb-4 border-b border-gray-700/50">
-                                <div>
-                                    <p className="text-sm text-gray-400">Suggestion</p>
-                                    <Tag text={analysisResult.suggestion} color={analysisResult.suggestion === 'Buy Now' || analysisResult.suggestion === 'Potential Quick Flip' ? 'green' : analysisResult.suggestion === 'Watch' ? 'yellow' : 'red'} />
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-400">Confidence</p>
-                                    <Tag text={analysisResult.confidence} color={analysisResult.confidence === 'High' ? 'green' : analysisResult.confidence === 'Medium' ? 'yellow' : 'red'} />
-                                </div>
-                                 <div>
-                                    <p className="text-sm text-gray-400">Risk</p>
-                                    <Tag text={analysisResult.risk} color={analysisResult.risk === 'High' ? 'red' : analysisResult.risk === 'Medium' ? 'yellow' : 'green'} />
-                                </div>
-                                {validWebSources && validWebSources.length > 0 && (
-                                    <div>
-                                        <p className="text-sm text-gray-400">Context</p>
-                                        <Tag text="Web Verified" color="blue" />
-                                    </div>
-                                )}
-                            </div>
-                            <CollapsibleAnalysis analysisText={analysisResult.analysisText} />
-                            {validWebSources && validWebSources.length > 0 && (
-                                <div className="mt-4">
-                                    <button 
-                                        onClick={() => setIsWebSourcesOpen(p => !p)}
-                                        className="w-full flex justify-between items-center text-left text-xs font-semibold text-gray-400 mb-1.5 uppercase hover:text-gray-200 transition-colors"
-                                        aria-expanded={isWebSourcesOpen}
-                                    >
-                                        <span>Web Sources</span>
-                                        <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${isWebSourcesOpen ? 'rotate-90' : ''}`} />
-                                    </button>
-                                    {isWebSourcesOpen && (
-                                        <div className="space-y-1.5 pt-1">
-                                            {validWebSources.map((source, index) => (
-                                                <a 
-                                                    href={source.web!.uri} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer" 
-                                                    key={index}
-                                                    className="text-xs text-emerald-400 hover:underline block truncate bg-gray-900/50 p-2 rounded-md"
-                                                >
-                                                    {source.web!.title}
-                                                </a>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </Card>
-            )}
+              </div>
+          </FullscreenChartModal>
+        )}
+        <div className="flex items-center gap-4 mb-6">
+          <Button onClick={onBack} variant="ghost" size="icon">
+            <ArrowLeftIcon className="w-6 h-6" />
+          </Button>
+          <img 
+            src={getHighResImageUrl(item.name)}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = createIconDataUrl(item.icon);
+            }}
+            alt={item.name} 
+            className="w-12 h-12 object-contain bg-gray-700/50 rounded-md"
+          />
+          <h2 className="text-3xl font-bold text-white flex-1">{item.name}</h2>
+          <div className="flex items-center gap-2">
+              <Button onClick={handleShare} variant="ghost" size="icon" className='text-gray-400 hover:text-emerald-400'>
+                <Share2Icon className="w-6 h-6" />
+              </Button>
+              <Button onClick={() => onOpenAddInvestmentModal(item)} variant="ghost" size="icon" className='text-gray-400 hover:text-emerald-400'>
+                <BriefcaseIcon className="w-6 h-6" />
+              </Button>
+              <Button onClick={() => toggleWatchlist(item.id)} variant="ghost" size="icon" className={`${isWatched ? 'text-yellow-400' : 'text-gray-400 hover:text-yellow-400'} ${isPendingAdd ? 'pulse-bg rounded-full' : ''}`}>
+                <StarIcon className={`w-6 h-6 ${isAnimatingStar ? 'animate-pop' : ''}`} />
+              </Button>
+              <Button onClick={handleOpenAlertModal} variant="ghost" size="icon" className={`${existingAlert ? 'text-emerald-400' : 'text-gray-400 hover:text-emerald-400'} ${shakeBellIcon ? 'animate-shake' : ''}`}>
+                  <BellIcon className="w-6 h-6" />
+              </Button>
+          </div>
         </div>
         
-        <div className="lg:col-span-1">
-          <Card>
-            <h3 className="text-xl font-bold text-white mb-4">Item Details</h3>
-            <div className="space-y-3 text-sm">
-                <p><strong className="text-gray-400">Examine:</strong> {item.examine}</p>
-                <p><strong className="text-gray-400">Value:</strong> {item.value.toLocaleString()} gp</p>
-                <p><strong className="text-gray-400">High Alch:</strong> {item.highalch.toLocaleString()} gp</p>
-                <p><strong className="text-gray-400">Buy Limit:</strong> {item.limit.toLocaleString()}</p>
-                <p><strong className="text-gray-400">Members:</strong> {item.members ? 'Yes' : 'No'}</p>
-            </div>
-          </Card>
-           <div className="mt-6">
-                <Button
-                    onClick={handleGetAiAnalysis}
-                    variant="secondary"
-                    className="w-full justify-center !py-3"
-                    disabled={!profile || profile.tokens <= 0 || isAnalyzing}
-                >
-                    {isAnalyzing ? (
-                        <Loader size="sm" />
-                    ) : (
-                        <>
-                            <BotIcon className="w-5 h-5 mr-2" />
-                            <span>AI Assistant (1 Token)</span>
-                        </>
-                    )}
-                </Button>
-                 {profile && profile.tokens <= 0 && !isAnalyzing && (
-                    <p className="text-xs text-center text-yellow-400 mt-2">You're out of tokens! More are awarded for activity.</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <Card className="relative">
+              <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
+                 <div className="flex-1 pr-4 min-w-[200px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                    <div>
+                      <p className="text-sm text-gray-400">High Price (Buy)</p>
+                      <p className="text-2xl md:text-3xl font-bold text-white truncate">
+                        {latestPrice?.high?.toLocaleString() || 'N/A'} gp
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-400">Low Price (Sell)</p>
+                      <p className="text-2xl md:text-3xl font-bold text-white truncate">
+                        {latestPrice?.low?.toLocaleString() || 'N/A'} gp
+                      </p>
+                    </div>
+                  </div>
+                  {displayFluctuation && (
+                      <div className="mt-2">
+                          <p className={`text-base font-semibold ${
+                              animatedAbsolute > 0 ? 'text-emerald-400' :
+                              animatedAbsolute < 0 ? 'text-red-400' : 'text-gray-400'
+                          }`}>
+                              {animatedAbsolute >= 0 ? '+' : ''}
+                              {Math.round(animatedAbsolute).toLocaleString()}
+                              <span className="ml-1">({animatedPercent >= 0 ? '+' : ''}{animatedPercent.toFixed(2)}%)</span>
+                              <span className="text-sm font-normal text-gray-400 ml-2">High price change vs. {activeTimeView} ago</span>
+                          </p>
+                      </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-x-4 gap-y-2 flex-wrap justify-end">
+                   <div className="relative" ref={dropdownRef}>
+                      <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setIsDropdownOpen(prev => !prev)}
+                          className="flex items-center gap-2 min-w-20 justify-center"
+                      >
+                          <span>{activeTimeView}</span>
+                          <ChevronDownIcon className={`w-4 h-4 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                      {isDropdownOpen && (
+                          <div className="absolute right-0 top-full mt-2 w-28 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-10 py-1">
+                              {timeViewOptions.map(tv => (
+                                  <button
+                                      key={tv}
+                                      onClick={() => handleTimeViewChange(tv)}
+                                      className={`w-full text-left px-3 py-1.5 text-sm rounded-md ${
+                                          activeTimeView === tv
+                                              ? 'bg-emerald-600 text-white'
+                                              : 'text-gray-300 hover:bg-gray-700/50'
+                                      }`}
+                                  >
+                                      {tv}
+                                  </button>
+                              ))}
+                          </div>
+                      )}
+                  </div>
+                  <Button onClick={() => setIsChartSettingsModalOpen(true)} variant="secondary" size="icon" className="w-9 h-9">
+                      <SlidersIcon className="w-5 h-5" />
+                  </Button>
+                  <Button onClick={() => setIsChartFullscreen(true)} variant="secondary" size="icon" className="w-9 h-9 md:hidden">
+                    <ExpandIcon className="w-5 h-5" />
+                  </Button>
+                  {isAutoRefreshEnabled ? (
+                      <CountdownCircle countdown={countdown} duration={AUTO_REFRESH_SECONDS} />
+                  ) : (
+                      <Button onClick={handleManualRefresh} variant="ghost" size="icon" disabled={isLoading} className="w-9 h-9">
+                          {isLoading ? <Loader size="sm" /> : <RefreshCwIcon className="w-4 h-4" />}
+                      </Button>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <label htmlFor="auto-refresh-toggle" className="text-sm text-gray-300 cursor-pointer select-none">
+                        Auto
+                    </label>
+                    <button
+                        id="auto-refresh-toggle"
+                        role="switch"
+                        aria-checked={isAutoRefreshEnabled}
+                        onClick={handleToggleAutoRefresh}
+                        className={`${
+                        isAutoRefreshEnabled ? 'bg-emerald-600' : 'bg-gray-600'
+                        } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
+                    >
+                        <span
+                        aria-hidden="true"
+                        className={`${
+                            isAutoRefreshEnabled ? 'translate-x-5' : 'translate-x-0'
+                        } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
+                        />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="h-[24rem] md:h-[28rem]">
+                {isLoading && isInitialLoad.current ? (
+                  <SkeletonChart />
+                ) : (
+                  <div className="h-full flex flex-col animate-fade-in">
+                    <div className="flex-grow h-2/3">
+                      <PriceChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} showAverageLine={chartSettings.showAverageLine} />
+                    </div>
+                    <div className="flex-grow h-1/3 pt-4 border-t border-gray-700/50 mt-4">
+                      <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
+                      <VolumeChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} />
+                    </div>
+                  </div>
                 )}
-                {!profile && (
-                    <p className="text-xs text-center text-gray-400 mt-2">Login to use the AI Assistant.</p>
-                )}
-            </div>
+              </div>
+              {chartFlash && (
+                <div
+                  key={chartFlash + Date.now()} // Force re-animation
+                  className={`absolute inset-0 rounded-lg pointer-events-none ${
+                    chartFlash === 'up' ? 'animate-glow-green' :
+                    chartFlash === 'down' ? 'animate-glow-red' :
+                    'animate-glow-white'
+                  }`}
+                ></div>
+              )}
+            </Card>
+             {(isAnalyzing || analysisResult || aiError) && (
+                  <Card className="mt-6">
+                      <div className="flex items-center gap-3 mb-4">
+                          <BotIcon className="w-6 h-6 text-emerald-400" />
+                          <h3 className="text-xl font-bold text-white">AI Market Analysis</h3>
+                      </div>
+                      {isAnalyzing && (
+                           <div className="flex flex-col items-center justify-center text-center p-8">
+                               <Loader />
+                               <p className="text-gray-300 mt-4">Analyzing market data for {item.name}...</p>
+                           </div>
+                      )}
+                      {aiError && <p className="text-red-400 bg-red-500/10 p-3 rounded-md">{aiError}</p>}
+                      {analysisResult && (
+                          <div>
+                              <div className="flex flex-wrap items-center gap-4 mb-4 pb-4 border-b border-gray-700/50">
+                                  <div>
+                                      <p className="text-sm text-gray-400">Suggestion</p>
+                                      <Tag text={analysisResult.suggestion} color={analysisResult.suggestion === 'Buy Now' || analysisResult.suggestion === 'Potential Quick Flip' ? 'green' : analysisResult.suggestion === 'Watch' ? 'yellow' : 'red'} />
+                                  </div>
+                                  <div>
+                                      <p className="text-sm text-gray-400">Confidence</p>
+                                      <Tag text={analysisResult.confidence} color={analysisResult.confidence === 'High' ? 'green' : analysisResult.confidence === 'Medium' ? 'yellow' : 'red'} />
+                                  </div>
+                                   <div>
+                                      <p className="text-sm text-gray-400">Risk</p>
+                                      <Tag text={analysisResult.risk} color={analysisResult.risk === 'High' ? 'red' : analysisResult.risk === 'Medium' ? 'yellow' : 'green'} />
+                                  </div>
+                                  {validWebSources && validWebSources.length > 0 && (
+                                      <div>
+                                          <p className="text-sm text-gray-400">Context</p>
+                                          <Tag text="Web Verified" color="blue" />
+                                      </div>
+                                  )}
+                              </div>
+                              <CollapsibleAnalysis analysisText={analysisResult.analysisText} />
+                              {validWebSources && validWebSources.length > 0 && (
+                                  <div className="mt-4">
+                                      <button 
+                                          onClick={() => setIsWebSourcesOpen(p => !p)}
+                                          className="w-full flex justify-between items-center text-left text-xs font-semibold text-gray-400 mb-1.5 uppercase hover:text-gray-200 transition-colors"
+                                          aria-expanded={isWebSourcesOpen}
+                                      >
+                                          <span>Web Sources</span>
+                                          <ChevronRightIcon className={`w-4 h-4 transition-transform duration-200 ${isWebSourcesOpen ? 'rotate-90' : ''}`} />
+                                      </button>
+                                      {isWebSourcesOpen && (
+                                          <div className="space-y-1.5 pt-1">
+                                              {validWebSources.map((source, index) => (
+                                                  <a 
+                                                      href={source.web!.uri} 
+                                                      target="_blank" 
+                                                      rel="noopener noreferrer" 
+                                                      key={index}
+                                                      className="text-xs text-emerald-400 hover:underline block truncate bg-gray-900/50 p-2 rounded-md"
+                                                  >
+                                                      {source.web!.title}
+                                                  </a>
+                                              ))}
+                                          </div>
+                                      )}
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                  </Card>
+              )}
+          </div>
+          
+          <div className="lg:col-span-1">
+            <Card>
+              <h3 className="text-xl font-bold text-white mb-4">Item Details</h3>
+              <div className="space-y-3 text-sm">
+                  <p><strong className="text-gray-400">Examine:</strong> {item.examine}</p>
+                  <p><strong className="text-gray-400">Value:</strong> {item.value.toLocaleString()} gp</p>
+                  <p><strong className="text-gray-400">High Alch:</strong> {item.highalch.toLocaleString()} gp</p>
+                  <p><strong className="text-gray-400">Buy Limit:</strong> {item.limit.toLocaleString()}</p>
+                  <p><strong className="text-gray-400">Members:</strong> {item.members ? 'Yes' : 'No'}</p>
+              </div>
+            </Card>
+             <div className="mt-6">
+                  <Button
+                      onClick={handleGetAiAnalysis}
+                      variant="secondary"
+                      className="w-full justify-center !py-3"
+                      disabled={!profile || profile.tokens <= 0 || isAnalyzing}
+                  >
+                      {isAnalyzing ? (
+                          <Loader size="sm" />
+                      ) : (
+                          <>
+                              <BotIcon className="w-5 h-5 mr-2" />
+                              <span>AI Assistant (1 Token)</span>
+                          </>
+                      )}
+                  </Button>
+                   {profile && profile.tokens <= 0 && !isAnalyzing && (
+                      <p className="text-xs text-center text-yellow-400 mt-2">You're out of tokens! More are awarded for activity.</p>
+                  )}
+                  {!profile && (
+                      <p className="text-xs text-center text-gray-400 mt-2">Login to use the AI Assistant.</p>
+                  )}
+              </div>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 };

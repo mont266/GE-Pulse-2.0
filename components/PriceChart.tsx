@@ -1,11 +1,13 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import type { TimeseriesData } from '../types';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 interface PriceChartProps {
   data: TimeseriesData[];
   isInitialLoad: boolean;
   showAverageLine: boolean;
+  isFullscreen?: boolean;
 }
 
 const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
@@ -50,7 +52,8 @@ const renderLiveDot = (props: any) => {
 };
 
 
-export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, showAverageLine }) => {
+export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, showAverageLine, isFullscreen = false }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
     
   const hasValidPriceData = useMemo(() => data.some(d => d.avgHighPrice !== null), [data]);
 
@@ -70,10 +73,13 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
       const date = new Date(unixTime * 1000);
       if (isLongTimeRange) {
           // For long ranges (like '1M' or 'ALL'), show Month/Year
-          return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric', timeZone: 'UTC' });
+          return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+      }
+      if (isFullscreen) {
+         return date.toLocaleTimeString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
       }
       // For short ranges, show Time
-      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' });
   };
 
 
@@ -88,7 +94,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
         <ResponsiveContainer width="100%" height="100%">
         <AreaChart
             data={data}
-            margin={{ top: 5, right: 20, left: 10, bottom: 25 }} // More bottom margin for angled labels
+            margin={{ top: 5, right: 20, left: isFullscreen ? -5 : 10, bottom: isFullscreen ? 15 : 25 }}
         >
             <defs>
                 <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
@@ -103,11 +109,11 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                 tickLine={false}
                 tickFormatter={formatXAxisLabel}
                 stroke="#9ca3af"
-                tick={{ fill: '#9ca3af', fontSize: 12 }}
-                angle={-30}
-                textAnchor="end"
-                dy={10}
-                minTickGap={80}
+                tick={{ fill: '#9ca3af', fontSize: isFullscreen ? 12 : 10 }}
+                angle={isFullscreen ? 0 : -30}
+                textAnchor={isFullscreen ? "middle" : "end"}
+                dy={isFullscreen ? 5 : 10}
+                minTickGap={isFullscreen ? 80 : isMobile ? 35 : 80}
             />
             <YAxis 
                 dataKey="avgHighPrice" 
@@ -121,8 +127,8 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                     return price.toString();
                 }}
                 stroke="#9ca3af"
-                tick={{ fill: '#9ca3af', fontSize: 12 }}
-                width={50}
+                tick={{ fill: '#9ca3af', fontSize: isFullscreen ? 12 : 10 }}
+                width={isFullscreen ? 60 : isMobile ? 40 : 50}
             />
             <Tooltip content={<CustomTooltip />} />
             {showAverageLine && averagePrice !== null && (

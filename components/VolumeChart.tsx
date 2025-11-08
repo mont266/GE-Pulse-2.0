@@ -2,10 +2,12 @@ import React from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { TimeseriesData } from '../types';
 import { formatLargeNumber } from '../utils/image';
+import { useMediaQuery } from '../hooks/useMediaQuery';
 
 interface VolumeChartProps {
   data: TimeseriesData[];
   isInitialLoad: boolean;
+  isFullscreen?: boolean;
 }
 
 const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
@@ -27,7 +29,8 @@ const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
     return null;
   };
 
-export const VolumeChart: React.FC<VolumeChartProps> = ({ data, isInitialLoad }) => {
+export const VolumeChart: React.FC<VolumeChartProps> = ({ data, isInitialLoad, isFullscreen = false }) => {
+  const isMobile = useMediaQuery('(max-width: 768px)');
     
   const chartData = data.map(d => ({
     timestamp: d.timestamp,
@@ -61,8 +64,8 @@ export const VolumeChart: React.FC<VolumeChartProps> = ({ data, isInitialLoad })
             tickLine={false}
             tickFormatter={(volume) => formatLargeNumber(volume)}
             stroke="#9ca3af"
-            tick={{ fill: '#9ca3af', fontSize: 12 }}
-            width={50}
+            tick={{ fill: '#9ca3af', fontSize: isFullscreen ? 12 : 10 }}
+            width={isFullscreen ? 60 : isMobile ? 40 : 50}
         />
         <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(107, 114, 128, 0.2)'}}/>
         <Legend 
@@ -70,7 +73,7 @@ export const VolumeChart: React.FC<VolumeChartProps> = ({ data, isInitialLoad })
             align="right" 
             height={36} 
             iconSize={10}
-            wrapperStyle={{ top: -5, right: 0 }}
+            wrapperStyle={{ top: isFullscreen ? 10 : -5, right: 0 }}
             formatter={(value, entry) => <span className="text-gray-300 text-xs">{value}</span>}
         />
         <Bar dataKey="highPriceVolume" name="Buy Volume" stackId="a" fill="#10b981" animationDuration={isInitialLoad ? 800 : 0} />
