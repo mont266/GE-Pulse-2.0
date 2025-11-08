@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -114,56 +115,58 @@ export default function App() {
 
   // --- Supabase Auth & Profile Listener ---
   useEffect(() => {
-    // This effect will run once on mount.
-    // The onAuthStateChange callback is executed immediately with the current session.
-    
     const handleInvalidSession = async () => {
         console.warn("Session is invalid or profile is missing. Signing out.");
         await supabase.auth.signOut();
-        // The onAuthStateChange listener will fire again with a null session, cleaning up the state.
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         setSession(session);
-        if (session) {
-            setIsAuthModalOpen(false); // Close auth modal on successful session
+
+        // Case 1: User is logged out.
+        if (!session) {
+            setProfile(null);
+            loggedInSince.current = null;
+            setCurrentView('home');
+            return;
+        }
+
+        // Case 2: User is logged in, but we don't have their profile in state yet (or it's the wrong one).
+        // This runs on initial load with a session, or after a fresh login.
+        if (!profile || profile.id !== session.user.id) {
+            setIsAuthModalOpen(false);
             try {
                 const userProfile = await getProfile(session.user.id);
                 if (userProfile) {
-                    // Profile exists, we are in a good state.
                     setProfile({ ...userProfile, email: session.user.email ?? null });
                     if (!userProfile.username) {
-                        setIsProfileModalOpen(true); // Prompt for username if not set
+                        setIsProfileModalOpen(true);
                     }
                     
-                    // Record login and show notifications
                     const now = Date.now();
-                    if (!loggedInSince.current || (now - loggedInSince.current > 1000 * 60 * 5)) { // Only if not logged in recently
+                    if (!loggedInSince.current || (now - loggedInSince.current > 1000 * 60 * 5)) {
                         loggedInSince.current = now;
                         const loginEvents = await recordLogin(session.user.id);
                         addNotifications(loginEvents);
-                        // Refetch profile to get updated streak/xp
                         const updatedProfile = await getProfile(session.user.id);
-                        if(updatedProfile) setProfile(p => ({...p, ...updatedProfile, email: session.user.email ?? null }));
+                        if(updatedProfile) setProfile(p => ({...(p as ProfileWithEmail), ...updatedProfile, email: session.user.email ?? null }));
                     }
                 } else {
-                    // We have a session but no profile. This is a corrupted state.
                     await handleInvalidSession();
                 }
             } catch (error) {
                 console.error("Error fetching profile, signing out:", error);
                 await handleInvalidSession();
             }
-        } else {
-            // No session, so clear profile data. This is the logged-out state.
-            setProfile(null);
-            loggedInSince.current = null;
-            setCurrentView('home'); // Go to home on logout
         }
+        
+        // Case 3 (Implicit): User is logged in and we already have their profile.
+        // This happens on TOKEN_REFRESHED (tab refocus). We do nothing, because the session is already updated
+        // and we don't need to re-fetch the profile. This prevents the "logout on tab switch" bug.
     });
 
     return () => subscription.unsubscribe();
-  }, [addNotifications]);
+  }, [profile, addNotifications]); // Dependency on `profile` ensures the listener is updated with the latest state.
   
   // --- Fetch User Data (Watchlist, Investments) from DB on Login ---
   useEffect(() => {
