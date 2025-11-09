@@ -520,7 +520,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
         Return the entire response as a single JSON object.`;
 
         // Initialize the Google AI client using the API key from Vite's environment variables.
-        const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_API_KEY });
+        const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_GEMINI_API_KEY });
 
         const responseSchema = {
             type: Type.OBJECT,
