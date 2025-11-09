@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Item, LatestPrice, AggregatePrice, FlippingSuggestion, Profile, HistoricAnalysis } from '../types';
@@ -545,8 +546,9 @@ export const FlippingAssistantPage: React.FC<FlippingAssistantPageProps> = ({ it
 
             setStatusMessage('Performing primary AI analysis...');
             setProgress(60);
-            // FIX: Adhere to Gemini API guidelines by exclusively using `process.env.API_KEY` for the API key.
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            
+            // Initialize the Google AI client using the API key from Vite's environment variables.
+            const ai = new GoogleGenAI({ apiKey: (import.meta as any).env.VITE_API_KEY });
             
             const responseSchema = {
                 type: Type.ARRAY,
