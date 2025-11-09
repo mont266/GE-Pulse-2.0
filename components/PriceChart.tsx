@@ -7,17 +7,22 @@ interface PriceChartProps {
   data: TimeseriesData[];
   isInitialLoad: boolean;
   showAverageLine: boolean;
+  showSellLine: boolean;
   isFullscreen?: boolean;
 }
 
 const CustomTooltip: React.FC<any> = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload;
+      const dataPoint = payload[0].payload;
+      const highPayload = payload.find(p => p.dataKey === 'avgHighPrice');
+      const lowPayload = payload.find(p => p.dataKey === 'avgLowPrice');
+      
       return (
         <div className="bg-gray-800/80 backdrop-blur-sm p-3 border border-gray-600 rounded-lg shadow-lg">
-          <p className="text-sm text-gray-300">{new Date(data.timestamp * 1000).toLocaleString()}</p>
-          <p className="font-bold text-emerald-400">Price: {data.avgHighPrice?.toLocaleString() || 'N/A'} gp</p>
-          <p className="text-xs text-gray-400">Volume: {(data.highPriceVolume + data.lowPriceVolume).toLocaleString()}</p>
+          <p className="text-sm text-gray-300">{new Date(dataPoint.timestamp * 1000).toLocaleString()}</p>
+          {highPayload && highPayload.value !== null && <p className="font-bold text-emerald-400">Buy Price: {highPayload.value.toLocaleString()} gp</p>}
+          {lowPayload && lowPayload.value !== null && <p className="font-bold text-red-400">Sell Price: {lowPayload.value.toLocaleString()} gp</p>}
+          <p className="text-xs text-gray-400">Volume: {(dataPoint.highPriceVolume + dataPoint.lowPriceVolume).toLocaleString()}</p>
         </div>
       );
     }
@@ -52,7 +57,7 @@ const renderLiveDot = (props: any) => {
 };
 
 
-export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, showAverageLine, isFullscreen = false }) => {
+export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, showAverageLine, showSellLine, isFullscreen = false }) => {
   const isMobile = useMediaQuery('(max-width: 768px)');
     
   const hasValidPriceData = useMemo(() => data.some(d => d.avgHighPrice !== null), [data]);
@@ -101,6 +106,10 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                     <stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/>
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                 </linearGradient>
+                <linearGradient id="colorSellPrice" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f87171" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#f87171" stopOpacity={0}/>
+                </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
             <XAxis 
@@ -119,7 +128,7 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                 dataKey="avgHighPrice" 
                 axisLine={false}
                 tickLine={false}
-                domain={['dataMin', 'auto']}
+                domain={['auto', 'auto']}
                 tickCount={6}
                 tickFormatter={(price) => {
                     if (price >= 1000000) return `${(price / 1000000).toFixed(2)}m`;
@@ -146,6 +155,21 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                     strokeDasharray="4 4"
                     strokeWidth={1.5}
                     ifOverflow="visible"
+                />
+            )}
+            {showSellLine && (
+                <Area 
+                    type="monotone" 
+                    dataKey="avgLowPrice" 
+                    stroke="#f87171" 
+                    strokeWidth={2} 
+                    fillOpacity={1} 
+                    fill="url(#colorSellPrice)" 
+                    connectNulls={true}
+                    dot={false}
+                    activeDot={{ r: 6, strokeWidth: 2, stroke: '#f87171', fill: '#1f2937' }}
+                    isAnimationActive={isInitialLoad}
+                    animationDuration={800}
                 />
             )}
             <Area 

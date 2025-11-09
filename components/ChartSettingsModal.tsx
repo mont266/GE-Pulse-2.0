@@ -4,6 +4,7 @@ import { XIcon, SlidersIcon } from './icons/Icons';
 
 interface ChartSettings {
   showAverageLine: boolean;
+  showSellLine: boolean;
 }
 
 interface ChartSettingsModalProps {
@@ -70,7 +71,12 @@ export const ChartSettingsModal: React.FC<ChartSettingsModalProps> = ({ settings
                 checked={settings.showAverageLine}
                 onChange={(isChecked) => onSettingsChange({ ...settings, showAverageLine: isChecked })}
             />
-             {/* Future settings can be added here */}
+            <ToggleSwitch
+                id="show-sell-line-toggle"
+                label="Show Sell Price Line"
+                checked={settings.showSellLine}
+                onChange={(isChecked) => onSettingsChange({ ...settings, showSellLine: isChecked })}
+            />
         </div>
       </div>
     </div>

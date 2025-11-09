@@ -230,7 +230,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   const [isChartSettingsModalOpen, setIsChartSettingsModalOpen] = useState(false);
   const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
   const [isChartFullscreen, setIsChartFullscreen] = useState(false);
-  const [chartSettings, setChartSettings] = useLocalStorage('chartSettings', { showAverageLine: true });
+  const [chartSettings, setChartSettings] = useLocalStorage('chartSettings', { showAverageLine: true, showSellLine: false });
 
   // AI Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -608,7 +608,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
           <FullscreenChartModal onClose={() => setIsChartFullscreen(false)}>
               <div className="h-full flex flex-col">
                   <div className="flex-grow-[2] min-h-0">
-                      <PriceChart data={filteredTimeseriesData} isInitialLoad={false} showAverageLine={chartSettings.showAverageLine} isFullscreen={true} />
+                      <PriceChart data={filteredTimeseriesData} isInitialLoad={false} showAverageLine={chartSettings.showAverageLine} showSellLine={chartSettings.showSellLine} isFullscreen={true} />
                   </div>
                   <div className="flex-grow-[1] min-h-0 pt-4 border-t border-gray-700/50 mt-4 flex flex-col">
                       <p className="text-xs font-bold text-gray-400 text-center mb-2 z-10 relative flex-shrink-0">Trade Volume</p>
@@ -753,7 +753,7 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                 ) : (
                   <div className="h-full flex flex-col animate-fade-in">
                     <div className="flex-grow h-2/3">
-                      <PriceChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} showAverageLine={chartSettings.showAverageLine} />
+                      <PriceChart data={filteredTimeseriesData} isInitialLoad={isInitialLoad.current} showAverageLine={chartSettings.showAverageLine} showSellLine={chartSettings.showSellLine} />
                     </div>
                     <div className="flex-grow h-1/3 pt-4 border-t border-gray-700/50 mt-4">
                       <p className="text-xs font-bold text-gray-400 text-center -mb-2 z-10 relative">Trade Volume</p>
