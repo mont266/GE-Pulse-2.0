@@ -718,6 +718,37 @@ export const deletePost = async (postId: string): Promise<void> => {
 };
 
 /**
+ * Updates a post in the community feed.
+ * RLS policies should ensure only the owner can perform this action.
+ * @param postId The ID of the post to update.
+ * @param updates The data to update (title and/or content).
+ * @returns The updated post.
+ */
+export const updatePost = async (postId: string, updates: { title?: string | null; content?: string | null }): Promise<Post> => {
+    const { data, error } = await supabase
+        .from('posts')
+        .update(updates)
+        .eq('id', postId)
+        .select('*, profiles:profiles(username, level, premium), comments(count)')
+        .single();
+
+    if (error) {
+        console.error('Error updating post:', error);
+        throw error;
+    }
+    if (!data) {
+        throw new Error('Failed to update post. Post not found or you do not have permission.');
+    }
+
+    // Transform the data to match the Post type
+    const post = {
+        ...data,
+        comment_count: Array.isArray(data.comments) ? data.comments[0]?.count ?? 0 : 0
+    };
+    return post as unknown as Post;
+};
+
+/**
  * Deletes a comment from the database.
  * RLS policies should ensure only the owner or an admin can perform this action.
  * @param commentId The ID of the comment to delete.

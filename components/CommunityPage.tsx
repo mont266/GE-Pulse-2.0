@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { Card } from './ui/Card';
 import { Loader } from './ui/Loader';
 import { Button } from './ui/Button';
-import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon, ChevronRightIcon, SearchIcon, XIcon } from './icons/Icons';
-import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost, deleteComment, searchProfilesByUsername } from '../services/database';
+import { UsersIcon, TrophyIcon, StarIcon, MessageSquareIcon, UserIcon, Trash2Icon, ChevronRightIcon, SearchIcon, XIcon, EditIcon } from './icons/Icons';
+import { fetchLeaderboard, fetchPosts, createPost, fetchCommentsForPost, createComment, deletePost, deleteComment, searchProfilesByUsername, updatePost } from '../services/database';
 import type { LeaderboardEntry, LeaderboardTimeRange, Post, Comment, Profile, Item, FlipData, SearchedProfile } from '../types';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
@@ -232,6 +232,14 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+    const [showMyPostsOnly, setShowMyPostsOnly] = useState(false);
+
+    const filteredPosts = useMemo(() => {
+        if (!showMyPostsOnly || !profile) {
+            return posts;
+        }
+        return posts.filter(post => post.user_id === profile.id);
+    }, [posts, showMyPostsOnly, profile]);
 
     const fetchAndSetPosts = useCallback(async () => {
         try {
@@ -256,6 +264,10 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
 
     const handlePostDeleted = (postId: string) => {
         setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
+    };
+
+    const handlePostUpdated = (updatedPost: Post) => {
+        setPosts(prevPosts => prevPosts.map(p => p.id === updatedPost.id ? updatedPost : p));
     };
 
     return (
@@ -291,18 +303,50 @@ const CommunityFeedPanel: React.FC<Omit<CommunityPageProps, 'onViewProfile'> & {
                 )
             )}
             
-            {isLoading && <div className="flex justify-center items-center h-64"><Loader /></div>}
-            {error && <div className="text-center text-red-400 mt-8">{error}</div>}
-            {!isLoading && !error && posts.length === 0 && (
-                 <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
-                    <p className="text-gray-500">The community feed is empty. Be the first to post!</p>
+            {session && profile && posts.length > 0 && (
+                <div className="flex justify-end items-center -mb-2">
+                    <div className="flex items-center gap-2">
+                        <label htmlFor="my-posts-toggle" className="text-sm text-gray-300 cursor-pointer select-none">
+                            My Posts Only
+                        </label>
+                        <button
+                            id="my-posts-toggle"
+                            role="switch"
+                            aria-checked={showMyPostsOnly}
+                            onClick={() => setShowMyPostsOnly(prev => !prev)}
+                            className={`${
+                            showMyPostsOnly ? 'bg-emerald-600' : 'bg-gray-600'
+                            } relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 focus:ring-offset-gray-900`}
+                        >
+                            <span
+                            aria-hidden="true"
+                            className={`${
+                                showMyPostsOnly ? 'translate-x-5' : 'translate-x-0'
+                            } pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition-transform duration-300 transition-bounce`}
+                            />
+                        </button>
+                    </div>
                 </div>
             )}
-            <div className="space-y-6">
-                {posts.map(post => (
-                    <PostCard key={post.id} post={post} items={items} onSelectItem={onSelectItem} profile={profile} session={session} onViewProfile={onViewProfile} onPostDeleted={handlePostDeleted} />
-                ))}
-            </div>
+
+            {isLoading && <div className="flex justify-center items-center h-64"><Loader /></div>}
+            {error && <div className="text-center text-red-400 mt-8">{error}</div>}
+            
+            {!isLoading && !error && (
+                posts.length === 0 ? (
+                     <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
+                        <p className="text-gray-500">The community feed is empty. Be the first to post!</p>
+                    </div>
+                ) : filteredPosts.length === 0 && showMyPostsOnly ? (
+                     <div className="text-center py-20 border-2 border-dashed border-gray-700 rounded-lg">
+                        <p className="text-gray-500">You haven't made any posts yet.</p>
+                    </div>
+                ) : (
+                    filteredPosts.map(post => (
+                        <PostCard key={post.id} post={post} items={items} onSelectItem={onSelectItem} profile={profile} session={session} onViewProfile={onViewProfile} onPostDeleted={handlePostDeleted} onPostUpdated={handlePostUpdated} />
+                    ))
+                )
+            )}
         </div>
     );
 };
@@ -376,13 +420,20 @@ const buildCommentTree = (comments: Comment[]): Comment[] => {
 };
 
 
-const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onPostDeleted: (postId: string) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile, onPostDeleted }) => {
+const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem: (item: Item) => void; profile: Profile | null; session: Session | null; onViewProfile: (user: {username: string | null}) => void; onPostDeleted: (postId: string) => void; onPostUpdated: (post: Post) => void; }> = ({ post, items, onSelectItem, profile, session, onViewProfile, onPostDeleted, onPostUpdated }) => {
     const [isCommentsOpen, setIsCommentsOpen] = useState(false);
     const [commentTree, setCommentTree] = useState<Comment[]>([]);
     const [allComments, setAllComments] = useState<Comment[]>([]); // Flat list for easier updates
     const [isCommentsLoading, setIsCommentsLoading] = useState(false);
     const [commentCount, setCommentCount] = useState(post.comment_count);
     
+    // State for editing posts
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedTitle, setEditedTitle] = useState(post.title || '');
+    const [editedContent, setEditedContent] = useState(post.content || '');
+    const [isSaving, setIsSaving] = useState(false);
+    const [editError, setEditError] = useState<string | null>(null);
+
     // State for deleting posts
     const [isDeletePostConfirmOpen, setIsDeletePostConfirmOpen] = useState(false);
     const [isDeletingPost, setIsDeletingPost] = useState(false);
@@ -393,6 +444,7 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
     const [isDeletingComment, setIsDeletingComment] = useState(false);
     const [deleteCommentError, setDeleteCommentError] = useState<string | null>(null);
 
+    const canEditPost = profile && (profile.id === post.user_id);
     const canDeletePost = profile && (profile.id === post.user_id || profile.developer);
     
     const handleToggleComments = async () => {
@@ -417,6 +469,35 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
         setAllComments(updatedComments);
         setCommentTree(buildCommentTree(updatedComments));
         setCommentCount(prev => prev + 1);
+    };
+
+    const handleSaveEdit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!post.flip_data && !editedContent.trim() && !editedTitle.trim()) {
+            setEditError("Post cannot be empty.");
+            return;
+        }
+        setIsSaving(true);
+        setEditError(null);
+        try {
+            const updatedPost = await updatePost(post.id, {
+                title: editedTitle.trim() || null,
+                content: editedContent.trim() || null,
+            });
+            onPostUpdated(updatedPost);
+            setIsEditing(false);
+        } catch (err: any) {
+            setEditError(err.message || 'Failed to save post.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleCancelEdit = () => {
+        setIsEditing(false);
+        setEditedTitle(post.title || '');
+        setEditedContent(post.content || '');
+        setEditError(null);
     };
     
     const handleConfirmDeletePost = async () => {
@@ -503,57 +584,105 @@ const PostCard: React.FC<{ post: Post; items: Record<string, Item>; onSelectItem
                                 {post.profiles.premium && <StarIcon className="w-4 h-4 text-yellow-400" />}
                                 <span className="text-gray-400 text-sm">· {timeAgo(post.created_at)}</span>
                             </div>
-                            {canDeletePost && (
-                                <button 
-                                    onClick={() => { setDeletePostError(null); setIsDeletePostConfirmOpen(true); }} 
-                                    className="p-1 -m-1 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0" 
-                                    aria-label="Delete post"
-                                    title="Delete post"
-                                >
-                                    <Trash2Icon className="w-4 h-4" />
-                                </button>
-                            )}
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                {canEditPost && !isEditing && (
+                                    <button 
+                                        onClick={() => setIsEditing(true)} 
+                                        className="p-1 -m-1 text-gray-500 hover:text-emerald-400 transition-colors" 
+                                        aria-label="Edit post"
+                                        title="Edit post"
+                                    >
+                                        <EditIcon className="w-4 h-4" />
+                                    </button>
+                                )}
+                                {canDeletePost && (
+                                    <button 
+                                        onClick={() => { setDeletePostError(null); setIsDeletePostConfirmOpen(true); }} 
+                                        className="p-1 -m-1 text-gray-500 hover:text-red-400 transition-colors" 
+                                        aria-label="Delete post"
+                                        title="Delete post"
+                                    >
+                                        <Trash2Icon className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                        <div className="text-gray-300 mt-2 space-y-3">
-                            {post.title && <h3 className="text-lg font-semibold text-white">{post.title}</h3>}
-                            {post.content && <p className="whitespace-pre-wrap">{post.content}</p>}
-                            {post.flip_data && item && <FlipPost flip={post.flip_data} item={item} onSelectItem={onSelectItem} />}
-                        </div>
-                    </div>
-                </div>
-                 <div className="flex items-center gap-4 mt-4 pl-14">
-                    <button onClick={handleToggleComments} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">
-                        <MessageSquareIcon className="w-5 h-5" />
-                        <span>{commentCount} Comment{commentCount !== 1 && 's'}</span>
-                    </button>
-                </div>
-                {isCommentsOpen && (
-                     <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4 space-y-4">
-                        {isCommentsLoading ? (
-                            <div className="flex justify-center p-4"><Loader /></div>
-                        ) : commentTree.length > 0 ? (
-                            commentTree.map(c => (
-                                <CommentCard 
-                                    key={c.id} 
-                                    comment={c} 
-                                    session={session}
-                                    profile={profile}
-                                    onViewProfile={onViewProfile}
-                                    onCommentAdded={handleCommentAdded}
-                                    onSetCommentToDelete={setCommentToDelete}
-                                />
-                            ))
+                        {isEditing ? (
+                            <form onSubmit={handleSaveEdit} className="mt-2">
+                                <div className="space-y-3">
+                                    <input
+                                        type="text"
+                                        value={editedTitle}
+                                        onChange={e => setEditedTitle(e.target.value)}
+                                        placeholder="Post title (optional)"
+                                        className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-2 text-lg font-semibold text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition"
+                                    />
+                                    <textarea
+                                        value={editedContent}
+                                        onChange={e => setEditedContent(e.target.value)}
+                                        placeholder="What's on your mind?"
+                                        className="w-full bg-gray-900/50 border border-gray-700 rounded-lg p-3 text-sm text-white placeholder-gray-500 focus:ring-1 focus:ring-emerald-500 focus:outline-none transition min-h-[80px]"
+                                    />
+                                    {post.flip_data && item && (
+                                        <div className="opacity-70 pointer-events-none">
+                                            <FlipPost flip={post.flip_data} item={item} onSelectItem={() => {}} />
+                                        </div>
+                                    )}
+                                </div>
+                                {editError && <p className="text-red-400 text-sm mt-2">{editError}</p>}
+                                <div className="flex justify-end items-center mt-3 gap-2">
+                                    <Button type="button" variant="ghost" onClick={handleCancelEdit} disabled={isSaving}>Cancel</Button>
+                                    <Button type="submit" disabled={isSaving || (!post.flip_data && !editedContent.trim() && !editedTitle.trim())}>
+                                        {isSaving ? <Loader size="sm" /> : 'Save'}
+                                    </Button>
+                                </div>
+                            </form>
                         ) : (
-                            <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>
+                            <div className="text-gray-300 mt-2 space-y-3">
+                                {post.title && <h3 className="text-lg font-semibold text-white">{post.title}</h3>}
+                                {post.content && <p className="whitespace-pre-wrap">{post.content}</p>}
+                                {post.flip_data && item && <FlipPost flip={post.flip_data} item={item} onSelectItem={onSelectItem} />}
+                            </div>
                         )}
-                         {session && (
-                            <CreateCommentForm 
-                                postId={post.id} 
-                                session={session} 
-                                onCommentAdded={handleCommentAdded} 
-                            />
-                         )}
                     </div>
+                </div>
+                {!isEditing && (
+                    <>
+                        <div className="flex items-center gap-4 mt-4 pl-14">
+                            <button onClick={handleToggleComments} className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors text-sm font-semibold">
+                                <MessageSquareIcon className="w-5 h-5" />
+                                <span>{commentCount} Comment{commentCount !== 1 && 's'}</span>
+                            </button>
+                        </div>
+                        {isCommentsOpen && (
+                            <div className="mt-4 pl-14 border-t border-gray-700/50 pt-4 space-y-4">
+                                {isCommentsLoading ? (
+                                    <div className="flex justify-center p-4"><Loader /></div>
+                                ) : commentTree.length > 0 ? (
+                                    commentTree.map(c => (
+                                        <CommentCard 
+                                            key={c.id} 
+                                            comment={c} 
+                                            session={session}
+                                            profile={profile}
+                                            onViewProfile={onViewProfile}
+                                            onCommentAdded={handleCommentAdded}
+                                            onSetCommentToDelete={setCommentToDelete}
+                                        />
+                                    ))
+                                ) : (
+                                    <p className="text-sm text-gray-500 text-center py-4">No comments yet.</p>
+                                )}
+                                {session && (
+                                    <CreateCommentForm 
+                                        postId={post.id} 
+                                        session={session} 
+                                        onCommentAdded={handleCommentAdded} 
+                                    />
+                                )}
+                            </div>
+                        )}
+                    </>
                 )}
             </Card>
         </>
