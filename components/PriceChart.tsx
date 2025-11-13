@@ -125,7 +125,6 @@ export const PriceChart: React.FC<PriceChartProps> = ({ data, isInitialLoad, sho
                 minTickGap={isFullscreen ? 80 : isMobile ? 35 : 80}
             />
             <YAxis 
-                dataKey="avgHighPrice" 
                 axisLine={false}
                 tickLine={false}
                 domain={['auto', 'auto']}
