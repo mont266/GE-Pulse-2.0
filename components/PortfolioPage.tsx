@@ -301,7 +301,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
         return { totalValue, unrealisedProfit, realisedProfit, totalTaxPaid };
     }, [openPositions, closedPositions, latestPrices]);
 
-    const mostProfitableItem = useMemo(() => {
+    const mostProfitableCumulativeItem = useMemo(() => {
         if (investments.length === 0) return null;
     
         const profitsByItem: Record<string, { totalProfit: number; item: Item }> = {};
@@ -341,6 +341,22 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
         return bestItem.totalProfit > 0 ? bestItem : null;
     
     }, [investments, items, latestPrices]);
+
+    const mostProfitableSingleFlip = useMemo(() => {
+        const profitableClosedPositions = closedPositions
+            .map(inv => {
+                if (inv.sell_price === null) return null;
+                const profit = ((inv.sell_price - inv.purchase_price) * inv.quantity) - (inv.tax_paid ?? 0);
+                return { ...inv, profit };
+            })
+            .filter((inv): inv is Investment & { profit: number } => inv !== null && inv.profit > 0);
+    
+        if (profitableClosedPositions.length === 0) return null;
+    
+        return profitableClosedPositions.reduce((max, current) =>
+            current.profit > max.profit ? current : max
+        );
+    }, [closedPositions]);
 
     const handleConfirmShare = async (postData: { title: string | null; content: string | null; flip_data: FlipData }) => {
         if (!session) throw new Error("User not authenticated");
@@ -513,18 +529,34 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                     <p className="text-sm text-gray-400">Total Tax Paid</p>
                     <p className="text-2xl font-bold text-red-400">-<FormattedGP value={summaryStats.totalTaxPaid} format={numberFormat} /></p>
                 </Card>
-                {mostProfitableItem && (
+                {mostProfitableSingleFlip && items[mostProfitableSingleFlip.item_id] && (
                     <Card 
                         isHoverable 
-                        onClick={() => onSelectItem(mostProfitableItem.item)} 
-                        className="sm:col-span-2 lg:col-span-2 bg-gray-800/80 border-yellow-500/30 flex flex-col justify-center p-4"
+                        onClick={() => onSelectItem(items[mostProfitableSingleFlip.item_id])} 
+                        className="bg-gray-800/80 border-yellow-500/30 flex flex-col justify-center p-4"
                     >
-                        <p className="text-sm text-yellow-300 flex items-center gap-1.5 font-semibold"><TrophyIcon className="w-4 h-4"/>Most Profitable Flip</p>
+                        <p className="text-sm text-yellow-300 flex items-center gap-1.5 font-semibold"><TrophyIcon className="w-4 h-4"/>Top Flip (Single Trade)</p>
                         <div className="flex items-center gap-3 mt-2">
-                            <img src={getHighResImageUrl(mostProfitableItem.item.name)} onError={(e) => { e.currentTarget.src = createIconDataUrl(mostProfitableItem.item.icon); }} alt={mostProfitableItem.item.name} className="w-10 h-10 object-contain bg-gray-700/50 rounded-md"/>
+                            <img src={getHighResImageUrl(items[mostProfitableSingleFlip.item_id].name)} onError={(e) => { e.currentTarget.src = createIconDataUrl(items[mostProfitableSingleFlip.item_id].icon); }} alt={items[mostProfitableSingleFlip.item_id].name} className="w-10 h-10 object-contain bg-gray-700/50 rounded-md"/>
                             <div className="flex-1 min-w-0">
-                                <p className="font-bold text-white truncate">{mostProfitableItem.item.name}</p>
-                                <div className="text-lg font-bold"><ProfitText value={mostProfitableItem.totalProfit} format={numberFormat} /></div>
+                                <p className="font-bold text-white truncate">{items[mostProfitableSingleFlip.item_id].name}</p>
+                                <div className="text-lg font-bold"><ProfitText value={mostProfitableSingleFlip.profit} format={numberFormat} /></div>
+                            </div>
+                        </div>
+                    </Card>
+                )}
+                {mostProfitableCumulativeItem && (
+                    <Card 
+                        isHoverable 
+                        onClick={() => onSelectItem(mostProfitableCumulativeItem.item)} 
+                        className="bg-gray-800/80 border-purple-500/30 flex flex-col justify-center p-4"
+                    >
+                        <p className="text-sm text-purple-300 flex items-center gap-1.5 font-semibold"><TrophyIcon className="w-4 h-4"/>Top Item (Cumulative)</p>
+                        <div className="flex items-center gap-3 mt-2">
+                            <img src={getHighResImageUrl(mostProfitableCumulativeItem.item.name)} onError={(e) => { e.currentTarget.src = createIconDataUrl(mostProfitableCumulativeItem.item.icon); }} alt={mostProfitableCumulativeItem.item.name} className="w-10 h-10 object-contain bg-gray-700/50 rounded-md"/>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-white truncate">{mostProfitableCumulativeItem.item.name}</p>
+                                <div className="text-lg font-bold"><ProfitText value={mostProfitableCumulativeItem.totalProfit} format={numberFormat} /></div>
                             </div>
                         </div>
                     </Card>
