@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabase';
@@ -719,6 +721,7 @@ export default function App() {
             onSpendToken={handleSpendToken}
             oneHourPrices={oneHourPrices}
             twentyFourHourPrices={twentyFourHourPrices}
+            investments={investments}
           />
         );
       case 'home':

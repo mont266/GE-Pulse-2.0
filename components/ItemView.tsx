@@ -1,8 +1,10 @@
 
 
+
+
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { GoogleGenAI, Type } from '@google/genai';
-import type { Item, TimeseriesData, LatestPrice, PriceAlert, Profile, AggregatePrice, ItemAnalysis } from '../types';
+import type { Item, TimeseriesData, LatestPrice, PriceAlert, Profile, AggregatePrice, ItemAnalysis, Investment } from '../types';
 import { PriceChart } from './PriceChart';
 import { VolumeChart } from './VolumeChart';
 import { Card } from './ui/Card';
@@ -36,6 +38,7 @@ interface ItemViewProps {
   onSpendToken: () => Promise<void>;
   oneHourPrices: Record<string, AggregatePrice>;
   twentyFourHourPrices: Record<string, AggregatePrice>;
+  investments: Investment[];
 }
 
 type TimeView = '1H' | '6H' | '1D' | '1W' | '1M' | '6M' | '1Y' | 'ALL';
@@ -212,7 +215,7 @@ const FullscreenChartModal: React.FC<{
 };
 
 
-export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, onRefreshPrices, watchlist, toggleWatchlist, pendingWatchlistAdds, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices }) => {
+export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeseriesData, isLoading, onBack, onRefresh, onRefreshPrices, watchlist, toggleWatchlist, pendingWatchlistAdds, alerts, setAlerts, onOpenAddInvestmentModal, onSetAlertActivity, profile, onSpendToken, oneHourPrices, twentyFourHourPrices, investments }) => {
   const [activeTimeView, setActiveTimeView] = useState<TimeView>('1W');
   const [notification, setNotification] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -247,6 +250,29 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
   // --- Price Fluctuation Animation State ---
   const [lastValidFluctuation, setLastValidFluctuation] = useState<{ absolute: number; percent: number } | null>(null);
   
+  const itemRealisedProfit = useMemo(() => {
+    if (!profile || !investments || investments.length === 0) {
+      return null;
+    }
+
+    const itemTrades = investments.filter(
+      (inv) => inv.item_id === item.id && inv.sell_price !== null
+    );
+
+    if (itemTrades.length === 0) {
+      return null;
+    }
+
+    const totalProfit = itemTrades.reduce((sum, trade) => {
+      const profit = (trade.sell_price! - trade.purchase_price) * trade.quantity - (trade.tax_paid ?? 0);
+      return sum + profit;
+    }, 0);
+    
+    if (totalProfit === 0) return null;
+
+    return totalProfit;
+  }, [investments, item.id, profile]);
+
   // Effect to manage initial load state for chart animations
   useEffect(() => {
     if (isLoading) {
@@ -851,6 +877,16 @@ export const ItemView: React.FC<ItemViewProps> = ({ item, latestPrice, timeserie
                   <p><strong className="text-gray-400">High Alch:</strong> {item.highalch.toLocaleString()} gp</p>
                   <p><strong className="text-gray-400">Buy Limit:</strong> {item.limit.toLocaleString()}</p>
                   <p><strong className="text-gray-400">Members:</strong> {item.members ? 'Yes' : 'No'}</p>
+                  {itemRealisedProfit !== null && (
+                    <div className="pt-3 mt-3 border-t border-gray-700/50">
+                        <p>
+                            <strong className="text-gray-400">Your Realised P/L:</strong>{' '}
+                            <span className={`font-semibold ${itemRealisedProfit > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                                {itemRealisedProfit > 0 ? '+' : ''}{itemRealisedProfit.toLocaleString()} gp
+                            </span>
+                        </p>
+                    </div>
+                  )}
               </div>
             </Card>
              <div className="mt-6">
