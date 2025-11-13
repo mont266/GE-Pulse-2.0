@@ -3,7 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 import type { Investment, Item, LatestPrice, Profile, FlipData } from '../types';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
-import { BriefcaseIcon, Trash2Icon, EditIcon, RefreshCwIcon, Share2Icon, CheckIcon } from './icons/Icons';
+import { BriefcaseIcon, Trash2Icon, EditIcon, RefreshCwIcon, Share2Icon, CheckIcon, TrophyIcon } from './icons/Icons';
 import { getHighResImageUrl, createIconDataUrl, formatLargeNumber } from '../utils/image';
 import { SellInvestmentModal } from './SellInvestmentModal';
 import { EditInvestmentModal } from './EditInvestmentModal';
@@ -301,6 +301,47 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
         return { totalValue, unrealisedProfit, realisedProfit, totalTaxPaid };
     }, [openPositions, closedPositions, latestPrices]);
 
+    const mostProfitableItem = useMemo(() => {
+        if (investments.length === 0) return null;
+    
+        const profitsByItem: Record<string, { totalProfit: number; item: Item }> = {};
+    
+        investments.forEach(inv => {
+            const item = items[inv.item_id];
+            if (!item) return;
+    
+            let profit = 0;
+            if (inv.sell_price !== null && inv.sell_date !== null) { // Closed position
+                profit = ((inv.sell_price - inv.purchase_price) * inv.quantity) - (inv.tax_paid ?? 0);
+            } else { // Open position
+                const currentPrice = latestPrices[inv.item_id]?.low;
+                if (currentPrice != null) {
+                    profit = (currentPrice - inv.purchase_price) * inv.quantity;
+                }
+            }
+    
+            if (profitsByItem[inv.item_id]) {
+                profitsByItem[inv.item_id].totalProfit += profit;
+            } else {
+                profitsByItem[inv.item_id] = { totalProfit: profit, item };
+            }
+        });
+    
+        const allProfitableItems = Object.values(profitsByItem);
+        if (allProfitableItems.length === 0) {
+            return null;
+        }
+    
+        // Find the item with the maximum profit
+        const bestItem = allProfitableItems.reduce((max, current) => 
+            current.totalProfit > max.totalProfit ? current : max
+        );
+        
+        // Only return if the profit is positive
+        return bestItem.totalProfit > 0 ? bestItem : null;
+    
+    }, [investments, items, latestPrices]);
+
     const handleConfirmShare = async (postData: { title: string | null; content: string | null; flip_data: FlipData }) => {
         if (!session) throw new Error("User not authenticated");
         if (!investmentToShare) throw new Error("No investment selected for sharing");
@@ -455,7 +496,7 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
             </div>
             
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                 <Card>
                     <p className="text-sm text-gray-400">Portfolio Value</p>
                     <p className="text-2xl font-bold text-white"><FormattedGP value={summaryStats.totalValue} format={numberFormat} /></p>
@@ -472,6 +513,22 @@ export const PortfolioPage: React.FC<PortfolioPageProps> = ({ investments, items
                     <p className="text-sm text-gray-400">Total Tax Paid</p>
                     <p className="text-2xl font-bold text-red-400">-<FormattedGP value={summaryStats.totalTaxPaid} format={numberFormat} /></p>
                 </Card>
+                {mostProfitableItem && (
+                    <Card 
+                        isHoverable 
+                        onClick={() => onSelectItem(mostProfitableItem.item)} 
+                        className="sm:col-span-2 lg:col-span-2 bg-gray-800/80 border-yellow-500/30 flex flex-col justify-center p-4"
+                    >
+                        <p className="text-sm text-yellow-300 flex items-center gap-1.5 font-semibold"><TrophyIcon className="w-4 h-4"/>Most Profitable Flip</p>
+                        <div className="flex items-center gap-3 mt-2">
+                            <img src={getHighResImageUrl(mostProfitableItem.item.name)} onError={(e) => { e.currentTarget.src = createIconDataUrl(mostProfitableItem.item.icon); }} alt={mostProfitableItem.item.name} className="w-10 h-10 object-contain bg-gray-700/50 rounded-md"/>
+                            <div className="flex-1 min-w-0">
+                                <p className="font-bold text-white truncate">{mostProfitableItem.item.name}</p>
+                                <div className="text-lg font-bold"><ProfitText value={mostProfitableItem.totalProfit} format={numberFormat} /></div>
+                            </div>
+                        </div>
+                    </Card>
+                )}
             </div>
 
              {/* Portfolio Performance Chart */}
